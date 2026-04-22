@@ -1,0 +1,3 @@
+interface Food {
+    void beEaten();
+}
