@@ -14,7 +14,6 @@ public class GraphicalView extends BasicView {
         this.currentRenderer = new AdvancedRenderer();
         setTitle("Wild-Life Eco Simulation - Graphical Mode");
         
-        // Nút chuyển chế độ (Task 39)
         JButton toggleBtn = new JButton("Chuyển chế độ View");
         toggleBtn.addActionListener(e -> {
             if (currentRenderer instanceof AdvancedRenderer) {
@@ -27,7 +26,6 @@ public class GraphicalView extends BasicView {
             mapPanel.repaint();
         });
         
-        // Gắn nút chuyển chế độ vào thanh công cụ đã có từ BasicView
         if (controlPanel != null) {
             controlPanel.add(toggleBtn);
         }
