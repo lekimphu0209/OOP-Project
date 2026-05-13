@@ -298,7 +298,7 @@ Ví dụ: Thỏ (1) nhường Sói (3) nhường Voi (5)
 ### Biên dịch
 ```bash
 cd d:\OOP\OOP_Project
-javac -encoding UTF-8 -d bin src/ecosystem/*.java src/ecosystem/physics/*.java src/ecosystem/behavior/*.java src/ecosystem/entities/*.java src/ecosystem/environment/*.java src/ecosystem/terrain/*.java src/ecosystem/view/*.java src/ecosystem/controller/*.java
+javac -encoding UTF-8 -d bin src/ecosystem/*.java src/ecosystem/physics/*.java src/ecosystem/behavior/*.java src/ecosystem/entities/*.java src/ecosystem/environment/*.java src/ecosystem/terrain/*.java src/ecosystem/view/*.java src/ecosystem/view/render/*.java src/ecosystem/controller/*.java
 ```
 
 ### Chạy
