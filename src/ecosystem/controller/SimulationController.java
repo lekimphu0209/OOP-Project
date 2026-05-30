@@ -1,8 +1,25 @@
 package ecosystem.controller;
 
+import ecosystem.environment.SeasonManager;
+import ecosystem.test.TestConfig;
+
+/**
+ * LEGACY CONTROLLER - God Class (172 lines)
+ * 
+ * This is the old simulation controller that combined game loop, spawning, and factory logic.
+ * Still used by MainLegacy.java for backward compatibility.
+ * 
+ * For the new modular simulation system, see:
+ * - ecosystem.core.simulation.SimulationLoop
+ * - ecosystem.core.simulation.SpawnManager
+ * - ecosystem.core.world.GridManager
+ * - ecosystem.core.world.EntityManager
+ */
+
 import ecosystem.entities.*;
 import ecosystem.environment.Environment;
 import ecosystem.physics.Vector2D;
+import ecosystem.terrain.TmxMapLoader;
 import ecosystem.view.GraphicalView;
 
 import javax.swing.*;
@@ -17,7 +34,7 @@ public class SimulationController {
     private Random random = new Random();
 
     public SimulationController(int width, int height) {
-        this.environment = new Environment(width, height);
+        this.environment = createEnvironment(width, height);
         this.view = new GraphicalView(environment);
         this.timer = new Timer(500, new ActionListener() {
             @Override
@@ -27,10 +44,49 @@ public class SimulationController {
         });
     }
 
+    private Environment createEnvironment(int width, int height) {
+        try {
+            // Load map from TMX file
+            var grid = TmxMapLoader.loadGrid("resources/maps/map.tmx");
+            return new Environment(grid);
+        } catch (Exception e) {
+            System.out.println("Không thể load file map.tmx, sử dụng map ngẫu nhiên");
+            e.printStackTrace();
+            return new Environment(width, height);
+        }
+    }
+
     public void initialize() {
-        // Add initial animals
+        spawnInitialEntities();
+        
+        view.setController(this);
+        view.setVisible(true);
+        timer.start();
+    }
+
+    private void spawnInitialEntities() {
+        spawnInitialAnimals();
+        spawnAquaticAnimals();
+        spawnInitialPlants();
+    }
+
+    private void spawnInitialAnimals() {
         for (int i = 0; i < 40; i++) {
             addRandomAnimal();
+        }
+    }
+
+    private void spawnAquaticAnimals() {
+        // Use TestConfig if test mode is enabled
+        if (TestConfig.ENABLE_TEST_MODE) {
+            // Only spawn if fish or duck are enabled
+            if (TestConfig.isAnimalTypeEnabled(6)) { // Fish
+                for (int i = 0; i < 10; i++) addAnimalByType(6);
+            }
+            if (TestConfig.isAnimalTypeEnabled(7)) { // Duck
+                for (int i = 0; i < 10; i++) addAnimalByType(7);
+            }
+            return;
         }
         
         // Ensure some Fish and Ducks appear right from the start
@@ -38,38 +94,61 @@ public class SimulationController {
             addAnimalByType(6); // Fish
             addAnimalByType(7); // Duck
         }
+    }
 
-        // Add initial plants
+    private void spawnInitialPlants() {
         for (int i = 0; i < 80; i++) {
             addRandomPlant();
         }
-
-        view.setVisible(true);
-        timer.start();
     }
 
     private void addRandomAnimal() {
-        double r = random.nextDouble();
-        int type;
-        
-        // Weighted probability: 70% Prey, 20% Predators, 10% Special
-        if (r < 0.7) {
-            // Prey types: Rabbit(0), Deer(1), Elephant(4), Fish(6), Duck(7)
-            int[] preyTypes = {0, 1, 4, 6, 7};
-            type = preyTypes[random.nextInt(preyTypes.length)];
-        } else if (r < 0.9) {
-            // Predator types: Wolf(2), Tiger(3), Crocodile(8)
-            int[] predatorTypes = {2, 3, 8};
-            type = predatorTypes[random.nextInt(predatorTypes.length)];
-        } else {
-            // Special: Human(5)
-            type = 5;
-        }
-        
+        int type = selectRandomAnimalType();
         addAnimalByType(type);
     }
 
+    private int selectRandomAnimalType() {
+        // Use TestConfig if test mode is enabled
+        if (TestConfig.ENABLE_TEST_MODE) {
+            var enabledTypes = TestConfig.getEnabledAnimalTypes();
+            if (enabledTypes.isEmpty()) {
+                return -1; // No animals enabled
+            }
+            // Randomly select from enabled types
+            return enabledTypes.toArray(new Integer[0])[random.nextInt(enabledTypes.size())];
+        }
+        
+        double r = random.nextDouble();
+        
+        // Weighted probability (balanced): 60% Prey, 25% Predators, 15% Special
+        if (r < 0.6) {
+            // Prey types: Rabbit(0), Deer(1), Elephant(4), Fish(6), Duck(7)
+            int[] preyTypes = {0, 1, 4, 6, 7};
+            return preyTypes[random.nextInt(preyTypes.length)];
+        } else if (r < 0.85) {
+            // Predator types: Wolf(2), Tiger(3), Crocodile(8)
+            int[] predatorTypes = {2, 3, 8};
+            return predatorTypes[random.nextInt(predatorTypes.length)];
+        } else {
+            // Special: Human(5)
+            return 5;
+        }
+    }
+
     private void addAnimalByType(int type) {
+        Vector2D position = findValidSpawnPosition(type);
+        if (position != null) {
+            Animal animal = createAnimal(type, position);
+            if (animal != null) {
+                // Kiểm tra giới hạn quần thể trước khi thêm
+                if (!environment.hasReachedPopulationLimit(animal.getClass())) {
+                    environment.addAnimal(animal);
+                }
+            }
+        }
+    }
+
+    private Vector2D findValidSpawnPosition(int type) {
         int width = environment.getGrid().getWidth();
         int height = environment.getGrid().getHeight();
         
@@ -77,37 +156,39 @@ public class SimulationController {
         for (int attempt = 0; attempt < 10; attempt++) {
             int x = random.nextInt(width);
             int y = random.nextInt(height);
-            Vector2D position = new Vector2D(x, y);
             
-            boolean isWater = environment.getGrid().getTile(x, y) != null && 
-                             environment.getGrid().getTile(x, y).getType() == ecosystem.terrain.TerrainType.WATER;
-            
-            Animal animal = null;
-            switch (type) {
-                case 0: animal = new Rabbit(position); break;
-                case 1: animal = new Deer(position); break;
-                case 2: animal = new Wolf(position); break;
-                case 3: animal = new Tiger(position); break;
-                case 4: animal = new Elephant(position); break;
-                case 5: animal = new Human(position); break;
-                case 6: animal = new Fish(position); break;
-                case 7: animal = new Duck(position); break;
-                case 8: animal = new Crocodile(position); break;
+            if (isValidSpawnPosition(x, y, type)) {
+                return new Vector2D(x, y);
             }
+        }
+        return null;
+    }
 
-            if (animal != null) {
-                boolean allowed = false;
-                if (isWater) {
-                    if (type == 6 || type == 7 || type == 8) allowed = true; // Fish, Duck, Crocodile
-                } else {
-                    if (type != 6 && environment.isWalkable(x, y)) allowed = true; // Not Fish, on land
-                }
+    private boolean isValidSpawnPosition(int x, int y, int type) {
+        boolean isWater = environment.getGrid().getTile(x, y) != null && 
+                         environment.getGrid().getTile(x, y).getType() == ecosystem.terrain.TerrainType.WATER;
+        
+        if (isWater) {
+            // Water animals: Fish(6), Duck(7), Crocodile(8)
+            return type == 6 || type == 7 || type == 8;
+        } else {
+            // Land animals: all except Fish
+            return type != 6 && environment.isWalkable(x, y);
+        }
+    }
 
-                if (allowed) {
-                    environment.addAnimal(animal);
-                    return;
-                }
-            }
+    private Animal createAnimal(int type, Vector2D position) {
+        switch (type) {
+            case 0: return new Rabbit(position);
+            case 1: return new Deer(position);
+            case 2: return new Wolf(position);
+            case 3: return new Tiger(position);
+            case 4: return new Elephant(position);
+            case 5: return new Human(position);
+            case 6: return new Fish(position);
+            case 7: return new Duck(position);
+            case 8: return new Crocodile(position);
+            default: return null;
         }
     }
 
@@ -127,16 +208,43 @@ public class SimulationController {
         environment.update();
         view.update();
 
-        // Change season every 20 ticks
-        if (random.nextInt(20) == 0) {
-            environment.nextSeason();
+        // Use season tick for automatic season change
+        environment.getSeasonManager().tick();
+
+        SeasonManager.Season season = environment.getSeason();
+        int currentAnimals = environment.getAnimals().size();
+        int currentPlants = environment.getPlants().size();
+
+        // Spawn animals if below minimum (emergency spawn)
+        if (currentAnimals < season.getMinAnimals()) {
+            addRandomAnimal();
+        } else if (currentAnimals < season.getMaxAnimals()) {
+            // Normal spawn based on season multiplier
+            double multiplier = season.getPopulationMultiplier();
+            if (random.nextDouble() < 0.05 * multiplier) {
+                addRandomAnimal();
+            }
         }
 
-        // Occasionally add new animals based on season
-        double multiplier = environment.getSeason().getPopulationMultiplier();
-        if (random.nextDouble() < 0.05 * multiplier) {
-            addRandomAnimal();
+        // Spawn plants if below minimum (emergency spawn)
+        if (currentPlants < season.getMinPlants()) {
+            addRandomPlant();
+        } else if (random.nextDouble() < 0.03) {
+            // Random plant spawn
+            addRandomPlant();
         }
+    }
+
+    public void togglePause() {
+        if (timer.isRunning()) {
+            timer.stop();
+        } else {
+            timer.start();
+        }
+    }
+
+    public boolean isPaused() {
+        return !timer.isRunning();
     }
 
     public void stop() {

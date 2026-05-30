@@ -6,12 +6,13 @@ import ecosystem.physics.Vector2D;
 public class Crocodile extends Animal {
     public Crocodile(Vector2D position) {
         // Position, Radius, Name, Health, Speed, Priority, IsPredator
-        super(position, 0.6, "Cá sấu", 50, 0.7, 3, true);
-        this.hungerRate = 2;
+        super(position, 0.6, "Cá sấu", 100, 1.2, 3, true);
+        this.hungerRate = 1;
         this.canSwim = true;
         this.canWalk = true;
         this.setStrategy(new HunterStrategy());
-        this.attackDamage = 20;
+        // attackDamage uses default 100 from Animal constructor
+        this.reproductionCooldownMax = 120; // 6 seconds (120 ticks at 500ms/tick) - reduced for survival
     }
 
     @Override
@@ -66,5 +67,22 @@ public class Crocodile extends Animal {
     @Override
     public void update() {
         // Handled by act()
+    }
+
+    @Override
+    public boolean isEnemy(Animal other) {
+        // Crocodile sợ Elephant và Human
+        return other instanceof Elephant || other instanceof Human;
+    }
+
+    @Override
+    public boolean canEat(Animal other) {
+        // Crocodile ăn: Duck, Fish, Rabbit, Deer
+        return other instanceof Duck || other instanceof Fish || other instanceof Rabbit || other instanceof Deer;
+    }
+
+    @Override
+    protected Animal createChild(Vector2D position) {
+        return new Crocodile(position);
     }
 }

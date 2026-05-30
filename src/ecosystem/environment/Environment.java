@@ -1,25 +1,76 @@
 package ecosystem.environment;
 
+/**
+ * LEGACY ENVIRONMENT - God Class (352 lines)
+ * 
+ * This is the old environment system that combined grid, entities, seasons, XML parsing, and observer pattern.
+ * Still used by MainLegacy.java for backward compatibility.
+ * 
+ * For the new modular world system, see:
+ * - ecosystem.core.world.GridManager
+ * - ecosystem.core.world.EntityManager
+ * - ecosystem.core.world.FoodFinder
+ */
+
 import ecosystem.entities.Animal;
 import ecosystem.entities.Entity;
 import ecosystem.entities.Plant;
 import ecosystem.physics.Vector2D;
 import ecosystem.terrain.Grid;
+import ecosystem.view.IObserver;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class Environment {
+public class Environment implements ISubject {
     private Grid grid;
     private List<Animal> animals;
     private List<Plant> plants;
-    private Season season;
+    private SeasonManager seasonManager;
+    private GridHelper gridHelper;
+    private FoodFinder foodFinder;
+    private List<IObserver> observers;
 
     public Environment(int width, int height) {
         this.grid = new Grid(width, height);
         this.animals = new ArrayList<>();
         this.plants = new ArrayList<>();
-        this.season = Season.SPRING;
+        this.observers = new ArrayList<>();
+        this.seasonManager = new SeasonManager();
+        this.gridHelper = new GridHelper(grid);
+        this.foodFinder = new FoodFinder(plants, animals);
+    }
+
+    public Environment(Grid grid) {
+        this.grid = grid;
+        this.animals = new ArrayList<>();
+        this.plants = new ArrayList<>();
+        this.observers = new ArrayList<>();
+        this.seasonManager = new SeasonManager();
+        this.gridHelper = new GridHelper(grid);
+        this.foodFinder = new FoodFinder(plants, animals);
+    }
+
+    // ==========================================
+    // IMPLEMENT OBSERVER PATTERN (ISubject)
+    // ==========================================
+    @Override
+    public void registerObserver(IObserver observer) {
+        if (!observers.contains(observer)) {
+            observers.add(observer);
+        }
+    }
+
+    @Override
+    public void removeObserver(IObserver observer) {
+        observers.remove(observer);
+    }
+
+    @Override
+    public void notifyObservers() {
+        for (IObserver observer : observers) {
+            observer.updateView();
+        }
     }
 
     public void addAnimal(Animal animal) {
@@ -28,10 +79,6 @@ public class Environment {
 
     public void addPlant(Plant plant) {
         plants.add(plant);
-    }
-
-    public void removeAnimal(Animal animal) {
-        animals.remove(animal);
     }
 
     public void removePlant(Plant plant) {
@@ -50,149 +97,179 @@ public class Environment {
         return grid;
     }
 
-    public Season getSeason() {
-        return season;
+    public SeasonManager.Season getSeason() {
+        return seasonManager.getSeason();
     }
 
-    public void setSeason(Season season) {
-        this.season = season;
+    public SeasonManager getSeasonManager() {
+        return seasonManager;
+    }
+
+    public void setSeason(SeasonManager.Season season) {
+        seasonManager.setSeason(season);
     }
 
     public void nextSeason() {
-        season = season.next();
+        seasonManager.nextSeason();
     }
 
     public boolean isWalkable(int x, int y) {
-        return grid.isWalkable(x, y);
+        return gridHelper.isWalkable(x, y);
     }
 
     public double getSpeedModifier(int x, int y) {
-        return grid.getSpeedModifier(x, y);
+        return gridHelper.getSpeedModifier(x, y);
     }
 
     public Entity findNearestFood(Animal animal) {
-        if (animal.isPredator()) {
-            return findNearestPrey(animal);
-        }
-        
-        Entity nearest = null;
-        double minDistance = Double.MAX_VALUE;
-
-        for (Plant plant : plants) {
-            if (plant.isEdible()) {
-                double distance = animal.getPosition().distanceTo(plant.getPosition());
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    nearest = plant;
-                }
-            }
-        }
-        return nearest;
-    }
-
-    private Animal findNearestPrey(Animal hunter) {
-        Animal nearest = null;
-        double minDistance = Double.MAX_VALUE;
-
-        for (Animal other : animals) {
-            if (other != hunter && !other.isPredator()) {
-                double distance = hunter.getPosition().distanceTo(other.getPosition());
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    nearest = other;
-                }
-            }
-        }
-        return nearest;
+        return foodFinder.findNearestFood(animal);
     }
 
     public boolean hasWaterNearby(Animal animal) {
-        int x = (int) animal.getPosition().getX();
-        int y = (int) animal.getPosition().getY();
-        int range = 2;
+        return gridHelper.hasWaterNearby(animal);
+    }
 
-        for (int dx = -range; dx <= range; dx++) {
-            for (int dy = -range; dy <= range; dy++) {
-                if (grid.getTile(x + dx, y + dy) != null &&
-                    grid.getTile(x + dx, y + dy).getType().getName().equals("Nước")) {
-                    return true;
-                }
-            }
-        }
-        return false;
+    public Vector2D findDirectionToNearestWater(Animal animal, int searchRange) {
+        return gridHelper.findDirectionToNearestWater(animal, searchRange);
     }
 
     public void update() {
-        // Update plants
+        updateEntities();
+        handleSeasonEffects();
+        notifyObservers();
+    }
+
+    private void updateEntities() {
+        updatePlants();
+        updateAnimals();
+        removeDeadEntities();
+        spawnRandomPlants(); // Spawn thực vật mới thay thế
+    }
+
+    private void updatePlants() {
         for (Plant plant : plants) {
             plant.update();
         }
+    }
 
-        // Plant reproduction based on season
-        if (season == Season.SPRING) {
-            reproducePlants();
-        }
-
-        // Update animals
-        for (Animal animal : animals) {
-            if (animal.isAlive()) {
+    private void updateAnimals() {
+        for (Animal animal : new ArrayList<>(animals)) {
+            if (animal != null && animal.isAlive()) {
                 animal.act(this);
             }
         }
-
-        // Remove dead animals
-        animals.removeIf(animal -> !animal.isAlive());
     }
 
-    private void reproducePlants() {
-        if (Math.random() < 0.1) { // 10% chance to spawn new plant
-            int x = (int) (Math.random() * grid.getWidth());
-            int y = (int) (Math.random() * grid.getHeight());
-            
-            if (grid.isWalkable(x, y)) {
-                String type = Math.random() < 0.7 ? "Cỏ" : "Cây ăn quả";
-                Plant plant = new Plant(
-                    new Vector2D(x, y),
-                    type,
-                    true,
-                    type.equals("Cỏ") ? 5.0 : 10.0
-                );
+    private void removeDeadEntities() {
+        animals.removeIf(animal -> animal == null || !animal.isAlive());
+        plants.removeIf(plant -> plant == null || !plant.isAlive()); // Xóa thực vật đã chết
+    }
+
+    private void handlePlantRespawn() {
+        for (Plant plant : plants) {
+            if (plant.canRespawn()) {
+                Vector2D newPosition = findRandomWalkablePosition();
+                if (newPosition != null) {
+                    plant.respawn(newPosition);
+                }
+            }
+        }
+    }
+
+    private void spawnRandomPlants() {
+        // Spawn thực vật mới để thay thế thực vật đã bị ăn
+        if (plants.size() < 80 && Math.random() < 0.05) {
+            Vector2D position = findRandomWalkablePosition();
+            if (position != null) {
+                Plant plant = createRandomPlant(position);
                 addPlant(plant);
             }
         }
     }
 
-    public enum Season {
-        SPRING("Mùa Xuân", 1.2, "Sinh sản nhiều (1.2x)"),
-        SUMMER("Mùa Hạ", 1.0, "Bình thường (1.0x)"),
-        AUTUMN("Mùa Thu", 0.8, "Giảm dần (0.8x)"),
-        WINTER("Mùa Đông", 0.5, "Ít sinh sản (0.5x)");
-
-        private final String name;
-        private final double populationMultiplier;
-        private final String description;
-
-        Season(String name, double populationMultiplier, String description) {
-            this.name = name;
-            this.populationMultiplier = populationMultiplier;
-            this.description = description;
+    private void handleSeasonEffects() {
+        if (seasonManager.getSeason() == SeasonManager.Season.SPRING) {
+            reproducePlants();
         }
+    }
 
-        public String getName() {
-            return name;
+    private void reproducePlants() {
+        if (Math.random() < 0.1) {
+            Vector2D position = findRandomWalkablePosition();
+            if (position != null) {
+                Plant plant = createRandomPlant(position);
+                addPlant(plant);
+            }
         }
+    }
 
-        public double getPopulationMultiplier() {
-            return populationMultiplier;
+    private Vector2D findRandomWalkablePosition() {
+        int x = (int) (Math.random() * grid.getWidth());
+        int y = (int) (Math.random() * grid.getHeight());
+        
+        if (grid.isWalkable(x, y)) {
+            return new Vector2D(x, y);
         }
+        return null;
+    }
 
-        public String getDescription() {
-            return description;
-        }
+    private Plant createRandomPlant(Vector2D position) {
+        String type = Math.random() < 0.7 ? "Cỏ" : "Cây ăn quả";
+        double nutrition = type.equals("Cỏ") ? 5.0 : 10.0;
+        return new Plant(position, type, true, nutrition);
+    }
 
-        public Season next() {
-            Season[] seasons = values();
-            return seasons[(this.ordinal() + 1) % seasons.length];
+    // Giới hạn quần thể theo loài
+    private static final int MAX_RABBIT = 8;  // Giảm từ 10 để predator có đủ thức ăn
+    private static final int MAX_DEER = 4;    // Giảm từ 5
+    private static final int MAX_FISH = 8;    // Giảm từ 10
+    private static final int MAX_WOLF = 7;    // Tăng từ 5
+    private static final int MAX_TIGER = 7;   // Tăng từ 5
+    private static final int MAX_CROCODILE = 7; // Tăng từ 5
+    private static final int MAX_HUMAN = 5;
+    private static final int MAX_ELEPHANT = 5;
+
+    public int countSpecies(Class<?> speciesClass) {
+        int count = 0;
+        for (Animal animal : animals) {
+            if (animal == null) continue;
+            if (animal.isAlive() && speciesClass.isInstance(animal)) {
+                count++;
+            }
         }
+        return count;
+    }
+
+    public boolean hasReachedPopulationLimit(Class<?> speciesClass) {
+        if (speciesClass == ecosystem.entities.Rabbit.class) {
+            return countSpecies(speciesClass) >= MAX_RABBIT;
+        } else if (speciesClass == ecosystem.entities.Deer.class) {
+            return countSpecies(speciesClass) >= MAX_DEER;
+        } else if (speciesClass == ecosystem.entities.Fish.class) {
+            return countSpecies(speciesClass) >= MAX_FISH;
+        } else if (speciesClass == ecosystem.entities.Wolf.class) {
+            return countSpecies(speciesClass) >= MAX_WOLF;
+        } else if (speciesClass == ecosystem.entities.Tiger.class) {
+            return countSpecies(speciesClass) >= MAX_TIGER;
+        } else if (speciesClass == ecosystem.entities.Crocodile.class) {
+            return countSpecies(speciesClass) >= MAX_CROCODILE;
+        } else if (speciesClass == ecosystem.entities.Human.class) {
+            return countSpecies(speciesClass) >= MAX_HUMAN;
+        } else if (speciesClass == ecosystem.entities.Elephant.class) {
+            return countSpecies(speciesClass) >= MAX_ELEPHANT;
+        }
+        return false;
+    }
+
+    public int getMaxPopulation(Class<?> speciesClass) {
+        if (speciesClass == ecosystem.entities.Rabbit.class) return MAX_RABBIT;
+        else if (speciesClass == ecosystem.entities.Deer.class) return MAX_DEER;
+        else if (speciesClass == ecosystem.entities.Fish.class) return MAX_FISH;
+        else if (speciesClass == ecosystem.entities.Wolf.class) return MAX_WOLF;
+        else if (speciesClass == ecosystem.entities.Tiger.class) return MAX_TIGER;
+        else if (speciesClass == ecosystem.entities.Crocodile.class) return MAX_CROCODILE;
+        else if (speciesClass == ecosystem.entities.Human.class) return MAX_HUMAN;
+        else if (speciesClass == ecosystem.entities.Elephant.class) return MAX_ELEPHANT;
+        return Integer.MAX_VALUE;
     }
 }

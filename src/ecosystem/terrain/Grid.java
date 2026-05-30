@@ -14,6 +14,22 @@ public class Grid {
         generateMap();
     }
 
+    public Grid(int width, int height, boolean generate) {
+        this.width = width;
+        this.height = height;
+        this.grid = new Tile[width][height];
+        if (generate) {
+            generateMap();
+        } else {
+            // Default fill to avoid null tiles before setTile is called
+            for (int i = 0; i < width; i++) {
+                for (int j = 0; j < height; j++) {
+                    grid[i][j] = new Tile(i, j, TerrainType.GRASS);
+                }
+            }
+        }
+    }
+
     private void generateMap() {
         Random rand = new Random();
 
@@ -43,6 +59,11 @@ public class Grid {
 
     public Tile[][] getAllTiles() {
         return grid;
+    }
+
+    public void setTile(int x, int y, Tile tile) {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        grid[x][y] = tile;
     }
 
     public int getWidth() {

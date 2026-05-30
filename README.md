@@ -1,358 +1,511 @@
-# Đề tài 3: Hệ thống Mô phỏng Hệ sinh thái Hoang dã (Wild-Life Eco Simulation)
+# Đề Tài 3: Hệ Thống Mô Phỏng Hệ Sinh Thái Hoang Dã (Wild-Life Eco Simulation)
 
-## Tổng quan
+## Hướng Dẫn Cài Đặt và Sử Dụng
 
-Đây là phiên bản tích hợp thống nhất từ 3 nhánh thành viên:
+### Cách Tải Về Project
 
-| Nhánh | Thành viên | Đóng góp |
-|-------|-----------|----------|
-| feature-Logic | - | Hệ thống vật lý, va chạm, di chuyển |
-| leanhvu | Lê Anh Vũ | Mẫu State cho hành vi động vật |
-| leviethoa | Lê Việt Hòa | Mẫu Strategy cho AI động vật |
+**Option 1: Clone từ Git Repository (nếu có)**
 
----
-
-## Cấu trúc Package
-
-```
-src/ecosystem/
-├── Main.java                        # Entry point chính
-│
-├── physics/                         # Hệ thống vật lý (BioLogic)
-│   ├── Vector2D.java               # Toán tử vector 2D (cộng, trừ, nhân, chuẩn hóa, khoảng cách, vuông góc)
-│   ├── PhysicsBody.java            # Thuộc tính vật lý (vị trí, vận tốc, bán kính, khối lượng)
-│   ├── CollisionDetector.java      # Phát hiện va chạm hình tròn
-│   ├── MovementEngine.java         # Engine di chuyển với yielding & terrain modifier
-│   ├── ICollidable.java            # Interface đối tượng có thể va chạm
-│   ├── IMovable.java               # Interface đối tượng có thể di chuyển
-│   └── IYieldable.java             # Interface cơ chế nhường đường
-│
-├── behavior/                        # Hệ thống hành vi (BioLogic)
-│   ├── State.java                  # Interface trạng thái (State Pattern)
-│   ├── SurvivalStrategy.java       # Interface chiến lược sinh tồn (Strategy Pattern)
-│   ├── WanderingState.java         # Trạng thái đi lang thang
-│   ├── HungryState.java            # Trạng thái đói - tìm thức ăn
-│   ├── ThirstyState.java           # Trạng thái khát - tìm nước
-│   ├── PassiveStrategy.java        # Chiến lược thụ động - di chuyển ngẫu nhiên
-│   ├── HunterStrategy.java         # Chiến lược săn mồi - đuổi & tấn công con mồi
-│   ├── ScaredStrategy.java         # Chiến lược sợ hãi - chạy trốn & trốn vào rừng
-│   └── AggressiveStrategy.java     # Chiến lược hung hăng - săn mồi mạnh hơn khi đói
-│
-├── entities/                        # Các thực thể (BioLogic)
-│   ├── Entity.java                 # Lớp cơ sở trừu tượng (position, radius)
-│   ├── Animal.java                 # Lớp động vật (State + Strategy + canSwim/canWalk/hungerRate/starvation)
-│   ├── Plant.java                  # Lớp thực vật (sinh sôi, 10 giai đoạn phát triển, edible khi stage>=3)
-│   ├── Rabbit.java                 # Thỏ - ăn cỏ, ScaredStrategy
-│   ├── Deer.java                   # Hươu - ăn cỏ, ScaredStrategy
-│   ├── Wolf.java                   # Sói - ăn thịt, HunterStrategy, hungerRate=2
-│   ├── Tiger.java                  # Hổ - ăn thịt, HunterStrategy, hungerRate=2
-│   ├── Elephant.java               # Voi - ăn cỏ, PassiveStrategy, không nhường đường
-│   ├── Human.java                  # Người - đặc biệt, PassiveStrategy, không nhường đường
-│   ├── Fish.java                   # Cá - chỉ bơi (canSwim=true, canWalk=false)
-│   ├── Duck.java                   # Vịt - vừa bơi vừa đi (canSwim=true, canWalk=true)
-│   └── Crocodile.java             # Cá sấu - ăn thịt, bơi+đi, chỉ đi xa nước tối đa 3 ô, nhanh dưới nước
-│
-├── environment/                     # Môi trường (BioLogic)
-│   └── Environment.java            # Quản lý môi trường, danh sách thực thể, hệ thống mùa, findNearestPrey
-│
-├── terrain/                         # Địa hình (BioLogic)
-│   ├── TerrainType.java            # Enum 5 loại địa hình (Cỏ, Rừng, Nước, Bùn, Vật cản)
-│   ├── Tile.java                   # Ô địa hình (có thể thay đổi loại runtime qua setType)
-│   └── Grid.java                   # Lưới bản đồ với tạo map ngẫu nhiên (50% Cỏ, 25% Rừng, 15% Nước, 10% Vật cản)
-│
-├── view/                            # Giao diện (ViewLogic)
-│   ├── BasicView.java              # GUI Basic mode - hình tròn/vuông + zoom/pan + điều khiển thủ công
-│   └── GraphicalView.java          # GUI Graphical mode - sprite sheet + nút chuyển đổi Basic/Graphical
-│
-└── controller/                      # Điều khiển (ViewLogic)
-    └── SimulationController.java    # Controller chính - vòng lặp simulation, spawn có trọng số, 9 loại động vật
+```bash
+git clone <repository-url>
+cd OOP_Project
 ```
 
----
+**Option 2: Tải trực tiếp (ZIP)**
 
-## Chi tiết các tính năng
+1. Tải file ZIP từ repository
+2. Giải nén vào thư mục mong muốn
+3. Đổi tên thư mục thành `OOP_Project`
 
-### 1. Hệ thống Địa hình (5 loại)
+### Yêu Cầu Hệ Thống
 
-| Địa hình | Màu GUI | Có thể đi qua | Hệ số tốc độ | Đặc điểm |
-|----------|---------|---------------|--------------|----------|
-| Cỏ (Grass) | Xanh lá `#228B22` | ✅ | 1.0x | Đất trống, tốc độ bình thường |
-| Rừng (Forest) | Xanh đậm `#006400` | ✅ | 0.7x | Động vật ăn cỏ trốn được, sói không vào |
-| Nước (Water) | Xanh dương `#1E90FF` | ❌ (chỉ canSwim) | 1.0x | Chỉ Fish/Duck/Crocodile đi qua được |
-| Bùn (Mud) | Nâu `#8B4513` | ✅ | 0.4x | Đi rất chậm |
-| Vật cản (Obstacle) | Xám `#808080` | ❌ | 0.0x | Chặn đường đi, có thể đặt thủ công |
+- **Java JDK 17** (Eclipse Adoptium) - Đường dẫn: `C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot`
+- **IDE:** Visual Studio Code
+- **OS:** Windows
+- **RAM:** Tối thiểu 4GB
+- **Disk:** Ít nhất 500MB
 
-### 2. Động vật (9 loại)
+### Cài Đặt Trên Visual Studio Code
 
-#### Động vật trên cạn
+**Bước 1: Cài đặt Java**
 
-| Loài | Hình dạng | Màu GUI | Máu | Tốc độ | Ưu tiên | Ăn thịt? | hungerRate | Chiến lược | Đặc điểm |
-|------|----------|---------|-----|--------|---------|----------|-----------|-----------|----------|
-| Thỏ | Tròn | Trắng | 30 | 1.2 | 1 | ❌ | 1 | ScaredStrategy | Chạy trốn vào rừng |
-| Hươu | Tròn | Nâu `#8B4513` | 50 | 1.0 | 2 | ❌ | 1 | ScaredStrategy | Chạy trốn vào rừng |
-| Sói | Vuông | Xám | 50 | 1.5 | 3 | ✅ | 2 | HunterStrategy | Tăng tốc 1.8x khi săn |
-| Hổ | Vuông | Cam | 70 | 1.3 | 4 | ✅ | 2 | HunterStrategy | Tăng tốc 1.8x khi săn |
-| Voi | Tròn | Xám nhạt `#A9A9A9` | 150 | 0.8 | 5 | ❌ | 1 | PassiveStrategy | Không nhường ai |
-| Người | Tròn | Xanh | 100 | 1.0 | 5 | ✅ | 1 | PassiveStrategy | Không nhường ai |
+1. Tải JDK 17 từ [Eclipse Adoptium](https://adoptium.net/)
+2. Cài đặt vào máy (đường dẫn: `C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot`)
+3. Thêm Java vào PATH environment variable:
+   - Mở Control Panel > System > Advanced system settings
+   - Environment Variables > System variables > Path > Edit
+   - Thêm: `C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot\bin`
 
-#### Động vật dưới nước / lưỡng cư
+**Bước 2: Cài đặt Visual Studio Code**
 
-| Loài | Hình dạng | Màu GUI | Máu | Tốc độ | Ưu tiên | Ăn thịt? | canSwim | canWalk | Chiến lược | Đặc điểm |
-|------|----------|---------|-----|--------|---------|----------|---------|---------|-----------|----------|
-| Cá | Tròn | Cyan `#00FFFF` | 20 | 0.8 | 0 | ❌ | ✅ | ❌ | PassiveStrategy | Chỉ sống trong nước |
-| Vịt | Tròn | Vàng | 25 | 1.0 | 0 | ❌ | ✅ | ✅ | PassiveStrategy | Bơi & đi trên cạn |
-| Cá sấu | Vuông | Xanh đậm `#006400` | 50 | 0.7 | 3 | ✅ | ✅ | ✅ | HunterStrategy | Nhanh dưới nước (1.2x), chậm trên cạn (0.6x), attackDamage=20, chỉ đi tối đa 3 ô khỏi nước |
+1. Tải VS Code từ [code.visualstudio.com](https://code.visualstudio.com/)
+2. Cài đặt vào máy
 
-### 3. Thực vật (2 loại)
+**Bước 3: Cài đặt Java Extension Pack**
 
-| Loại | Kích thước GUI | Dinh dưỡng | Tỷ lệ xuất hiện |
-|------|---------------|-----------|-----------------|
-| Cỏ | Điểm xanh lá nhỏ (10px) | 5.0 | 70% |
-| Cây ăn quả | Điểm cam lớn (16px) | 10.0 | 30% |
+1. Mở Visual Studio Code
+2. Vào Extensions (Ctrl+Shift+X)
+3. Tìm kiếm "Extension Pack for Java"
+4. Cài đặt extension (Microsoft)
 
-- Tự động sinh sôi vào **Mùa Xuân** (10% mỗi tick)
-- **10 giai đoạn phát triển** (0→10), chỉ ăn được khi `growthStage >= 3`
-- Dinh dưỡng tỷ lệ với giai đoạn: `nutrition * (stage / maxStage)`
-- Khi bị ăn: reset về `growthStage = 0` (mọc lại)
+**Bước 4: Mở Project**
 
-### 4. Hệ thống Sinh tồn (Starvation)
+1. File > Open Folder
+2. Chọn thư mục `OOP_Project`
+3. VS Code sẽ tự động nhận diện project Java
 
-```
-Animal.act() mỗi tick:
-  1. hunger += hungerRate * seasonFactor    (Winter: 1.5x hunger)
-  2. thirst++
-  3. Nếu hunger > threshold HOẶC thirst > 50:
-     → takeDamage(baseDamage * seasonFactor)
-     - Predator: threshold=40, baseDamage=10
-     - Prey:     threshold=50, baseDamage=2
-     - Winter:   damage x1.5
-  4. state.handle() → kiểm tra & chuyển trạng thái
-  5. strategy.execute() → quyết định di chuyển
-  6. move() → thực hiện di chuyển (kiểm tra canSwim/canWalk)
-```
+**Bước 5: Compile Project**
 
-### 5. Hệ thống Di chuyển (canSwim / canWalk)
+1. Mở terminal trong VS Code (Ctrl+`)
+2. Chạy lệnh:
 
-```java
-// Animal.move() kiểm tra:
-if (đích đến là Nước) {
-    if (canSwim) → được đi
-    else → dừng lại
-} else {
-    if (canWalk && isWalkable) → được đi
-    else → dừng lại
-}
-```
-
-| Loài | canSwim | canWalk | Hành vi |
-|------|---------|---------|---------|
-| Thỏ, Hươu, Sói, Hổ, Voi, Người | ❌ | ✅ | Chỉ đi trên cạn, dừng trước nước |
-| Cá | ✅ | ❌ | Chỉ bơi trong nước |
-| Vịt | ✅ | ✅ | Vừa bơi vừa đi |
-| Cá sấu | ✅ | ✅ | Bơi nhanh (1.2x), đi chậm (0.6x), không đi xa >3 ô khỏi nước |
-
-### 6. Hệ thống Mùa (4 mùa)
-
-| Mùa | Hệ số sinh sản | Mô tả | Ảnh hưởng khác |
-|-----|----------------|-------|---------------|
-| Mùa Xuân (Spring) | 1.2x | Sinh sản nhiều | Thực vật sinh sôi (10%/tick) |
-| Mùa Hạ (Summer) | 1.0x | Bình thường | - |
-| Mùa Thu (Autumn) | 0.8x | Giảm dần | - |
-| Mùa Đông (Winter) | 0.5x | Ít sinh sản | Hunger x1.5, Starvation damage x1.5 |
-
-- Mùa tự động chuyển đổi mỗi ~20 tick (≈10 giây)
-- Chuyển theo vòng: Xuân → Hạ → Thu → Đông → Xuân...
-- Hiển thị mùa + mô tả ở thanh thông tin GUI
-
-### 7. Điều khiển Thủ công (Manual Control)
-
-| Nút | Chức năng |
-|-----|----------|
-| **Trồng thức ăn** | Click trái vào ô Cỏ/Rừng để trồng cỏ hoặc cây ăn quả |
-| **Đặt vật cản** | Click trái vào ô bất kỳ để đặt vật cản chặn đường |
-
-### 8. Camera: Zoom & Pan
-
-| Thao tác | Cách thực hiện |
-|----------|---------------|
-| **Zoom in/out** | Cuộn chuột (mouse wheel) - từ 0.2x đến 5.0x |
-| **Pan (di chuyển camera)** | Click phải + kéo chuột |
-| **Zoom về vị trí chuột** | Tự động điều chỉnh offset khi zoom |
-
-- Khi zoom > 0.8x: hiển thị thanh máu trên mỗi con vật
-- Khi zoom > 0.5x: hiển thị đường lưới ô đất
-- Khi zoom nhỏ: ẩn chi tiết, xem toàn bản đồ
-
-### 9. Tương tác Nâng cao
-
-- **Thỏ/Hươu trốn trong rừng**: Tự động tìm rừng gần nhất khi bị đuổi
-- **Sói/Hổ không vào rừng**: Nếu con mồi vào rừng, dừng đuổi → chuyển Passive
-- **Tăng tốc khi trốn**: Động vật ăn cỏ tăng tốc 1.3-1.5x khi phát hiện kẻ thù
-- **Tăng tốc khi săn**: Sói/Hổ tăng tốc 1.8x khi đuổi mồi
-- **Cá sấu giới hạn nước**: Không đi xa >3 ô khỏi nước, tự động quay lại hồ
-- **Cơ chế nhường đường**: Động vật priority thấp lách sang bên (sidestep)
-
-### 10. Mẫu State Pattern (Hành vi nội tại)
-
-| Trạng thái | Điều kiện chuyển vào | Hành vi |
-|-----------|---------------------|---------|
-| WanderingState | Mặc định | Đi lang thang, kiểm tra hunger/thirst |
-| HungryState | hunger > 50 | Tìm thức ăn gần nhất, ăn khi đến nơi |
-| ThirstyState | thirst > 50 | Tìm nước gần nhất, uống khi ở cạnh hồ |
-
-### 11. Mẫu Strategy Pattern (Chiến lược sinh tồn)
-
-| Chiến lược | Đối tượng sử dụng | Hành vi |
-|-----------|-------------------|---------|
-| PassiveStrategy | Voi, Người, Cá, Vịt | Di chuyển ngẫu nhiên, không tấn công |
-| HunterStrategy | Sói, Hổ, Cá sấu | Tìm con mồi gần nhất, đuổi & tấn công |
-| ScaredStrategy | Thỏ, Hươu | Chạy trốn kẻ thù, tìm rừng để trốn |
-| AggressiveStrategy | Có thể gán động | Săn mồi hung hăng, bonus damage 1.5x |
-
-### 12. Cơ chế Nhường đường (Yielding)
-
-```
-IYieldable.mustYieldTo(other):
-  - return other.getPriority() > this.getPriority()
-
-Ví dụ: Thỏ (1) nhường Sói (3) nhường Voi (5)
-       Voi & Người (5) → KHÔNG nhường ai (override mustYieldTo = false)
-       Cá & Vịt (0) → nhường tất cả
-```
-
-### 13. Spawn có trọng số (Weighted Spawn)
-
-```
-70% Prey:  Thỏ, Hươu, Voi, Cá, Vịt
-20% Predator: Sói, Hổ, Cá sấu
-10% Special: Người
-```
-
-- Fish/Duck/Crocodile chỉ spawn trên ô Nước
-- Các loài cạn chỉ spawn trên ô đi được (không phải Nước)
-- Thử tối đa 10 lần tìm vị trí hợp lệ
-
----
-
-## Kiến trúc OOP
-
-### Tách biệt BioLogic và ViewLogic
-
-```
-┌──────────────────────────────────────────────────┐
-│                    ViewLogic                       │
-│  ┌──────────────┐ ┌──────────────┐ ┌───────────┐ │
-│  │  BasicView   │ │GraphicalView │ │Simulation │ │
-│  │  (shapes)    │ │  (sprites)   │ │Controller │ │
-│  │  zoom/pan    │ │  toggle btn  │ │  (timer)  │ │
-│  └──────┬───────┘ └──────┬───────┘ └─────┬─────┘ │
-└─────────┼────────────────┼───────────────┼────────┘
-          │                │               │
-          └────────────────┼───────────────┘
-                           ▼
-┌──────────────────────────────────────────────────┐
-│                    BioLogic                        │
-│  ┌────────────┐ ┌──────────┐ ┌─────────────────┐ │
-│  │  entities  │ │ behavior │ │    physics       │ │
-│  │ Animal     │ │ State    │ │ Vector2D         │ │
-│  │ Plant      │ │ Strategy │ │ CollisionDetector│ │
-│  │ 9 species  │ │ 4 strat  │ │ MovementEngine   │ │
-│  ├────────────┤ ├──────────┤ ├─────────────────┤ │
-│  │ environment│ │ terrain  │ │   interfaces     │ │
-│  │ Season     │ │ Grid     │ │ ICollidable      │ │
-│  │ starvation │ │ Tile     │ │ IMovable         │ │
-│  │ findPrey   │ │ 5 types  │ │ IYieldable       │ │
-│  └────────────┘ └──────────┘ └─────────────────┘ │
-└──────────────────────────────────────────────────┘
-```
-
-### Tính mở rộng (Extensibility)
-
-| Muốn thêm... | Cách làm |
-|-------------|---------|
-| Loài động vật mới | Kế thừa `Animal`, set `canSwim`/`canWalk`/`hungerRate`, chọn Strategy |
-| Chiến lược mới | Implement `SurvivalStrategy` |
-| Trạng thái mới | Implement `State` |
-| Loại địa hình mới | Thêm vào enum `TerrainType` |
-| Chế độ hiển thị mới | Kế thừa `BasicView` (như `GraphicalView`) |
-
-### Design Patterns sử dụng
-
-| Pattern | Vai trò | Ví dụ |
-|---------|---------|-------|
-| **State Pattern** | Quản lý trạng thái nội tại động vật | WanderingState → HungryState → ThirstyState |
-| **Strategy Pattern** | Quản lý chiến lược sinh tồn | HunterStrategy, ScaredStrategy, PassiveStrategy |
-| **Interface Segregation** | Tách biệt khả năng vật lý | ICollidable, IMovable, IYieldable |
-| **Template Method** | Animal.act() định nghĩa flow, subclass override move() | Crocodile.move() thêm logic giới hạn nước |
-| **MVC** | Tách biệt Model-View-Controller | Environment (Model), BasicView (View), SimulationController (Controller) |
-| **Inheritance** | Phân cấp thực thể | Entity → Animal → 9 loài cụ thể |
-
----
-
-## Cách chạy chương trình
-
-### Yêu cầu
-- Java 17+ (JDK)
-- Hỗ trợ Swing GUI
-
-### Biên dịch
 ```bash
 cd d:\OOP\OOP_Project
-javac -encoding UTF-8 -d bin src/ecosystem/*.java src/ecosystem/physics/*.java src/ecosystem/behavior/*.java src/ecosystem/entities/*.java src/ecosystem/environment/*.java src/ecosystem/terrain/*.java src/ecosystem/view/*.java src/ecosystem/controller/*.java
+javac -encoding UTF-8 -d bin -cp bin src/ecosystem/**/*.java
 ```
 
-### Chạy
+**Bước 6: Chạy Project**
+
 ```bash
 java -cp bin ecosystem.Main
 ```
 
-### Điều khiển GUI
+Hoặc chạy trực tiếp với JDK đã cài:
 
-| Thao tác | Cách thực hiện |
-|----------|---------------|
-| Trồng thức ăn | Chọn nút "Trồng thức ăn" → Click trái vào ô Cỏ/Rừng |
-| Đặt vật cản | Chọn nút "Đặt vật cản" → Click trái vào ô bất kỳ |
-| Zoom in/out | Cuộn chuột |
-| Pan camera | Click phải + kéo chuột |
-| Chuyển Basic/Graphical | Nút "Chuyển chế độ View" (chỉ GraphicalView) |
+```bash
+cd d:\OOP\OOP_Project
+"C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot\bin\java.exe" -cp bin ecosystem.Main
+```
 
----
+## Tóm Tắt Project
 
-## Yêu cầu đề bài đã đáp ứng
+Đây là một hệ thống mô phỏng hệ sinh thái hoang dã được viết bằng Java, sử dụng OOP (Object-Oriented Programming) để mô phỏng hành vi của các loài động vật trong môi trường tự nhiên theo yêu cầu đề tài.
 
-- [x] Thế giới có vùng: Cỏ, Rừng, Nước, Bùn, Vật cản (+ bản đồ kết hợp)
-- [x] Ít nhất 5 loại thực thể (có **9 động vật** + 2 thực vật)
-- [x] Động vật có hunger, thirst, health, behavior
-- [x] Movement affected by terrain speed modifiers
-- [x] Animals yield to higher priority animals
-- [x] Stop at obstacles
-- [x] Drink water if thirsty
-- [x] User controls: plant food, place obstacles
-- [x] Two GUI modes: Basic (shapes) + Graphical (sprites, toggle)
-- [x] Zoom & Pan camera (mouse wheel + right-click drag)
-- [x] Extensible OOP design for adding new species and strategies
-- [x] Seasonal system adjusting population density (4 mùa + winter penalty)
-- [x] Separation of BioLogic and ViewLogic
-- [x] State Pattern + Strategy Pattern combined
-- [x] Thỏ lách qua bụi rậm trốn sói
-- [x] Sói tăng tốc đuổi mồi
-- [x] Cá sấu giới hạn gần nước, nhanh dưới nước
-- [x] Cá chỉ sống trong nước, Vịt lưỡng cư
-- [x] Starvation: mất máu khi đói/khát quá lâu (Winter x1.5)
+## Mô Tả Thế Giới
 
-## Tính năng có thể mở rộng thêm
+### Các Vùng Địa Hình
 
-1. **Hiệu ứng âm thanh**: Tiếng chim hót, tiếng gầm hổ, tiếng bước chân
-2. **Lưu/Load**: Lưu trạng thái simulation ra file
-3. **Statistic**: Thống kê số lượng từng loài theo thời gian
-4. **Sinh sản động vật**: Hai con cùng loài gần nhau → sinh con mới
-5. **MUD sinh sôi**: Bùn xuất hiện gần nước vào mùa mưa
+Hệ thống bao gồm 4 vùng địa hình chính:
 
----
+1. **Đồng cỏ (Grassland):** Vùng đất bằng phẳng với nhiều cỏ
+2. **Khu rừng rậm (Forest):** Vùng rừng rậm, nơi con mồi có thể trốn thoát
+3. **Hồ nước (Water):** Vùng nước, nơi cá và vịt sinh sống
+4. **Bản đồ tổng hợp:** Kết hợp cả 3 vùng trên trong một bản đồ
 
-## Tác giả tích hợp
+### Đặc Điểm Zoom
 
-Tích hợp từ 3 nhánh thành viên:
-- **feature-Logic**: Physics & Collision system (Vector2D, PhysicsBody, CollisionDetector, MovementEngine, Interfaces)
-- **leanhvu**: State Pattern (WanderingState, HungryState, ThirstyState, Animal, Deer, Rabbit, Environment)
-- **leviethoa**: Strategy Pattern (HunterStrategy, PatrolStrategy, Animal, Wolf, Tiger, Elephant, Human, Rabbit)
+- Khi xem vùng hồ nước nhỏ: Các con vật (cá, vịt) hiển thị to
+- Khi xem toàn bản đồ rừng: Các thực thể thu nhỏ lại để thấy sự di chuyển tổng thể
+
+### Các Loài Thực Thể (Ít Nhất 5 Loại)
+
+**Thực vật:**
+
+- **Cỏ (Grass):** Tự sinh sôi theo thời gian
+- **Cây ăn quả (Fruit Tree):** Tự sinh sôi theo thời gian
+
+**Động vật ăn cỏ (Herbivore):**
+
+- **Thỏ (Rabbit):** Hiền lành, chạy trốn khi gặp nguy hiểm
+- **Hươu (Deer):** Hiền lành, chạy trốn khi gặp nguy hiểm
+- **Vịt (Duck):** Có thể bơi, ăn cỏ và cây ăn quả
+- **Voi (Elephant):** Động vật đặc biệt - không sợ kẻ thù, có quyền ưu tiên di chuyển
+
+**Động vật ăn thịt (Predator):**
+
+- **Sói (Wolf):** Săn đuổi động vật ăn cỏ, sợ hổ và người
+- **Hổ (Tiger):** Săn đuổi động vật ăn cỏ, sợ người
+- **Cá sấu (Crocodile):** Săn cá và động vật ăn cỏ, có thể bơi
+
+**Động vật đặc biệt:**
+
+- **Người (Human):** Thợ săn - ưu tiên di chuyển, không nhường đường, có thể săn tất cả các loài khác
+
+### Chi Tiết Từng Loài
+
+**Thực Vật**
+
+**Cỏ (Grass)**
+
+- **Loại:** Thực vật
+- **Giá trị dinh dưỡng:** 5.0
+- **Giai đoạn trưởng thành:** 0-10
+- **Ăn được khi:** growthStage >= 3
+- **Đặc điểm:** Tự sinh sôi theo thời gian, hồi sinh sau 50 ticks khi bị ăn
+- **Ai ăn:** Rabbit, Deer, Duck, Elephant
+- **Hồi sinh:** Sau 50 ticks (25 giây) khi bị ăn
+
+**Cây ăn quả (Fruit Tree)**
+
+- **Loại:** Thực vật
+- **Giá trị dinh dưỡng:** 10.0
+- **Giai đoạn trưởng thành:** 0-10
+- **Ăn được khi:** growthStage >= 3
+- **Đặc điểm:** Tự sinh sôi theo thời gian, hồi sinh sau 50 ticks khi bị ăn
+- **Ai ăn:** Deer, Duck, Elephant, Human
+- **Hồi sinh:** Sau 50 ticks (25 giây) khi bị ăn
+
+**Động Vật Ăn Thịt (Predator)**
+
+**Sói (Wolf) - Tier B**
+
+- **Kích thước:** Radius 0.5, Health 100, Speed 1.5, Priority 3
+- **Tốc độ khi săn:** 1.5x (2.25)
+- **Tốc độ đói:** HungerRate 1
+- **Chiến lược:** HunterStrategy
+- **Cooldown sinh sản:** 90 ticks (4.5 giây)
+- **Kẻ thù:** Tiger, Human
+- **Ăn được:** Duck, Rabbit, Deer
+- **Đặc điểm:** Săn đuổi con mồi, tăng tốc khi đuổi theo, không vào được rừng
+
+**Hổ (Tiger) - Tier A**
+
+- **Kích thước:** Radius 0.7, Health 100, Speed 1.3, Priority 4
+- **Tốc độ khi săn:** 1.5x (1.95)
+- **Tốc độ đói:** HungerRate 1
+- **Chiến lược:** HunterStrategy
+- **Cooldown sinh sản:** 120 ticks (6 giây)
+- **Kẻ thù:** Human
+- **Ăn được:** Duck, Rabbit, Deer
+- **Đặc điểm:** Sói sợ Hổ, ưu tiên đường đi cao hơn Sói
+
+**Cá sấu (Crocodile) - Tier A**
+
+- **Kích thước:** Radius 0.6, Health 100, Speed 1.2, Priority 3
+- **Tốc độ trong nước:** 1.2x (1.44)
+- **Tốc độ trên đất:** 0.6x (0.72)
+- **Tốc độ đói:** HungerRate 1
+- **Chiến lược:** HunterStrategy
+- **Cooldown sinh sản:** 120 ticks (6 giây)
+- **Kẻ thù:** Elephant, Human
+- **Ăn được:** Duck, Fish, Rabbit, Deer
+- **Đặc biệt:** Có thể bơi và đi bộ, không đi quá 3 ô khỏi nước
+
+**Người (Human) - Tier S**
+
+- **Kích thước:** Radius 0.6, Health 100, Speed 1.0, Priority 5
+- **Tốc độ khi săn:** 1.5x (1.5)
+- **Chiến lược:** HunterStrategy
+- **Cooldown sinh sản:** 200 ticks (10 giây)
+- **Kẻ thù:** Không có
+- **Ăn được:** Duck, Tiger, Wolf, Crocodile, Deer, Rabbit, Fruit Tree
+- **Đặc biệt:** Không nhường đường, có thể săn tất cả các loài
+
+**Động Vật Ăn Cỏ (Herbivore)**
+
+**Thỏ (Rabbit) - Tier C**
+
+- **Kích thước:** Radius 0.4, Health 100, Speed 1.2, Priority 1
+- **Chiến lược:** ScaredStrategy
+- **Cooldown sinh sản:** 60 ticks (3 giây)
+- **Kẻ thù:** Tiger, Wolf, Crocodile, Human
+- **Ăn được:** Cỏ
+- **Đặc điểm:** Nhỏ nhất, dễ bị săn, chạy trốn khi gặp kẻ thù
+
+**Hươu (Deer) - Tier C**
+
+- **Kích thước:** Radius 0.6, Health 100, Speed 1.0, Priority 2
+- **Chiến lược:** ScaredStrategy
+- **Cooldown sinh sản:** 80 ticks (4 giây)
+- **Kẻ thù:** Tiger, Wolf, Crocodile, Human
+- **Ăn được:** Cỏ, Cây ăn quả
+- **Đặc điểm:** Lớn hơn Thỏ, có thể ăn cây ăn quả
+
+**Vịt (Duck)**
+
+- **Kích thước:** Radius 0.4, Health 100, Speed 1.0, Priority 0
+- **Tốc độ trong nước:** 1.3x (1.3)
+- **Tốc độ trên đất:** 0.7x (0.7)
+- **Chiến lược:** PassiveStrategy
+- **Kẻ thù:** Không có
+- **Ăn được:** Cỏ, Cây ăn quả
+- **Đặc biệt:** Có thể bơi và đi bộ, không đi quá 4 ô khỏi nước
+
+**Voi (Elephant) - Tier S**
+
+- **Kích thước:** Radius 1.0, Health 100, Speed 0.8, Priority 5
+- **Chiến lược:** PassiveStrategy
+- **Cooldown sinh sản:** 200 ticks (10 giây)
+- **Kẻ thù:** Không có
+- **Ăn được:** Cỏ, Cây ăn quả
+- **Đặc biệt:** Không nhường đường, không sợ kẻ thù
+
+**Động Vật Khác**
+
+**Cá (Fish) - Tier D**
+
+- **Kích thước:** Radius 0.3, Health 100, Speed 0.8, Priority 0
+- **Cooldown sinh sản:** 40 ticks (2 giây)
+- **Kẻ thù:** Crocodile
+- **Ăn được:** Không ăn gì
+- **Đặc biệt:** Chỉ bơi, không đi bộ, chỉ sống trong nước
+
+### Số Lượng Theo Mùa
+
+- **Mùa sinh sản:** Động vật đông đúc
+- **Mùa hạn hán:** Động vật ít đi
+
+## Điều Khiển
+
+### Chế Độ Tự Động
+
+- Các loài tự tìm thức ăn dựa trên bản năng
+- Tự tìm nước uống khi khát
+- Tự săn mồi khi đói
+
+### Chế Độ Thủ Công (Tương Lai)
+
+- Người dùng click vào một vùng để "gieo mầm" thức ăn
+- Đặt vật cản (vách đá) để chặn đường
+
+## Tương Tác
+
+### Hành Vi Tự Nhiên
+
+- **Dừng khi gặp vật cản:** Động vật dừng lại khi gặp chướng ngại vật
+- **Uống nước khi khát:** Động vật tự tìm nước uống khi khát
+
+### Cơ Chế "Nhường Đường"
+
+- Quyền ưu tiên đường đi: Elephant > Human > Tiger > Crocodile > Wolf > Deer > Rabbit > Fish
+- Động vật nhỏ phải dạt sang một bên khi động vật lớn đi qua
+- Thú săn mồi có quyền ưu tiên hơn con mồi
+
+### Săn Đuổi & Vượt Mặt
+
+- **Sói tăng tốc:** Sói có thể tăng tốc (1.5x) để đuổi kịp thỏ
+- **Thỏ trốn trong rừng:** Thỏ có thể lách qua bụi rậm (nơi sói không vào được) để trốn thoát
+- **Cá sấu trong nước:** Cá sấu nhanh hơn trong nước khi săn cá và vịt
+
+### Âm Thanh (Tương Lai)
+
+- Tiếng chim hót
+- Tiếng gầm của hổ khi phát hiện con mồi
+- Tiếng bước chân sột soạt trên lá khô
+
+## Các Tính Năng Chính
+
+### 1. Chuỗi Thức Ăn
+
+- **Human:** Ăn Duck, Tiger, Wolf, Crocodile, Deer, Rabbit
+- **Tiger:** Ăn Rabbit, Deer, Duck
+- **Wolf:** Ăn Rabbit, Deer, Duck
+- **Crocodile:** Ăn Fish, Rabbit, Deer, Duck
+- **Duck:** Ăn Grass, Fruit Tree
+- **Rabbit:** Ăn Grass
+- **Deer:** Ăn Grass, Fruit Tree
+- **Elephant:** Ăn Grass, Fruit Tree
+
+### 3. Cơ Chế Săn Mồi
+
+- **Phạm vi săn:** Predator săn khi con mồi trong phạm vi 2.0 ô
+- **Tốc độ săn:** Săn thành công ngay lập tức khi vào phạm vi
+- **Tăng tốc:** Predator tăng tốc 1.5x khi đuổi theo con mồi
+- **Đặc biệt:** Crocodile giữ tốc độ nước (1.2x) khi săn trong nước
+- **Bảo tồn:** Không săn nếu số lượng con mồi < 3 để tránh tuyệt chủng
+
+### 4. Hành Vi AI
+
+- **Ưu tiên:** Mệt mỏi > Khát > Đói > Sinh sản > Săn mồi > Đi lang thang
+- **Predator:** Sử dụng HunterStrategy để săn mồi
+- **Herbivore:** Sử dụng PassiveStrategy để tìm thức ăn
+- **Escape:** Con mồi chạy trốn khi phát hiện kẻ thù
+
+### 5. Hệ Thống Mùa
+
+- **Mùa Xuân:** Tăng sinh sản (1.2x)
+- **Mùa Hạ:** Bình thường (1.0x)
+- **Mùa Thu:** Giảm sinh sản (0.8x)
+- **Mùa Đông:** Ít sinh sản (0.5x), tăng damage đói
+
+### 6. Sinh Sản
+
+- **Điều kiện:** hunger < 30 && thirst < 30 && stamina > 70
+- **Cooldown:** Fish (2s), Rabbit (3s), Deer (4s), Wolf (4.5s), Crocodile (6s), Tiger (6s), Human (10s), Elephant (10s)
+
+### 7. Giới Hạn Quần Thể
+
+- Rabbit: 8, Deer: 4, Fish: 8
+- Wolf: 7, Tiger: 7, Crocodile: 7, Human: 5, Elephant: 5
+
+## Yêu Cầu Kỹ Thuật (OOP Standard)
+
+### 1. Tính Tái Sử Dụng (Extensibility)
+
+**Dễ dàng thêm loài mới:**
+
+- Kế thừa từ lớp `Animal` base class
+- Override các method: `canEat()`, `isEnemy()`, `move()`
+- Thêm strategy phù hợp (HunterStrategy, PassiveStrategy, ScaredStrategy)
+- Ví dụ: Thêm Chim ưng, Cá sấu mới
+
+**Dễ dàng thay đổi môi trường:**
+
+- Địa hình ảnh hưởng tốc độ di chuyển:
+  - **Đất (Land):** Tốc độ bình thường
+  - **Nước (Water):** Cá sấu nhanh hơn (1.2x), Vịt nhanh hơn (1.3x)
+  - **Rừng (Forest):** Sói không vào được, con mồi có thể trốn
+- Thêm loại địa hình mới bằng cách mở rộng `TerrainType`
+
+### 2. Hai Chế Độ Hiển thị (GUI)
+
+**Basic Mode:**
+
+- Các con vật là hình tròn/vuông màu sắc khác nhau
+- Đỏ: Predator (Sói, Hổ, Cá sấu)
+- Xanh lá: Herbivore (Thỏ, Hươu, Voi)
+- Xanh dương: Động vật nước (Cá, Vịt)
+- Màu vàng: Người
+
+**Graphical Mode:**
+
+- Sử dụng ảnh động (Gif/Sprite)
+- Thể hiện hành động: chạy, ăn, nằm ngủ
+- Hình ảnh được load từ thư mục `resources/`
+
+### 3. Tách Biệt BioLogic và ViewLogic
+
+**BioLogic (Tính toán sinh tồn):**
+
+- `Animal.java`: Quản lý hunger, thirst, stamina, health
+- `HunterStrategy.java`: Logic săn mồi
+- `PassiveStrategy.java`: Logic tìm thức ăn
+- `ScaredStrategy.java`: Logic chạy trốn
+- `AggressiveStrategy.java`: Logic hung hăng
+
+**ViewLogic (Vẽ lên màn hình):**
+
+- `GraphicalView.java`: View đồ họa
+- `BasicView.java`: View cơ bản
+- `AdvancedRenderer.java`: Render với sprite
+- `SimulationController.java`: Điều khiển hiển thị
+
+### 4. Survival Strategy (Chiến Lược Sinh Tồn)
+
+**PassiveStrategy:**
+
+- Chỉ đi lang thang và ăn cỏ
+- Dùng cho: Herbivore (Thỏ, Hươu, Voi, Vịt)
+
+**HunterStrategy:**
+
+- Luôn quét tìm mục tiêu trong bán kính 4.0 mét
+- Tấn công khi vào phạm vi 2.0 mét
+- Tăng tốc 1.5x khi đuổi theo
+- Dùng cho: Predator (Sói, Hổ, Cá sấu, Người)
+
+**ScaredStrategy:**
+
+- Luôn di chuyển ngược hướng với kẻ thù gần nhất
+- Chạy trốn khi phát hiện predator
+- Dùng cho: Herbivore khi gặp nguy hiểm
+
+**AggressiveStrategy:**
+
+- Đánh trả khi bị đe dọa
+- Có thể dùng khi động vật đói quá mức (tương lai)
+
+## Cấu Trúc Project
+
+```
+OOP_Project/
+├── src/
+│   └── ecosystem/
+│       ├── Main.java                    # Entry point
+│       ├── behavior/                    # Hành vi AI
+│       │   ├── HunterStrategy.java      # Strategy săn mồi
+│       │   ├── PassiveStrategy.java     # Strategy thụ động
+│       │   ├── ScaredStrategy.java      # Strategy sợ hãi
+│       │   └── AggressiveStrategy.java  # Strategy hung hăng
+│       ├── entities/                    # Các thực thể
+│       │   ├── Animal.java              # Base class cho động vật
+│       │   ├── Wolf.java                # Sói
+│       │   ├── Tiger.java               # Hổ
+│       │   ├── Crocodile.java           # Cá sấu
+│       │   ├── Human.java               # Người
+│       │   ├── Rabbit.java              # Thỏ
+│       │   ├── Deer.java                # Hươu
+│       │   ├── Duck.java                # Vịt
+│       │   ├── Elephant.java            # Voi
+│       │   ├── Fish.java                # Cá
+│       │   └── Plant.java               # Thực vật
+│       ├── environment/                 # Môi trường
+│       │   ├── Environment.java          # Quản lý môi trường
+│       │   ├── SeasonManager.java       # Quản lý mùa
+│       │   ├── FoodFinder.java          # Tìm thức ăn
+│       │   └── Grid.java                # Lưới bản đồ
+│       ├── physics/                     # Vật lý
+│       │   ├── Vector2D.java            # Vector 2D
+│       │   └── ICollidable.java         # Interface va chạm
+│       ├── terrain/                     # Địa hình
+│       │   ├── Grid.java                # Lưới
+│       │   ├── Tile.java                # Ô
+│       │   └── TerrainType.java         # Loại địa hình
+│       └── view/                        # Giao diện
+│           ├── GraphicalView.java       # View đồ họa
+│           └── render/                  # Render
+├── bin/                                 # Compiled files
+└── resources/                           # Tài nguyên (hình ảnh, v.v.)
+```
+
+## Các Thay Đổi Chính Trong Session Này
+
+### 1. Cải Thiện Cơ Chế Săn Mồi
+
+- Tăng phạm vi săn từ 1.0 → 2.0 ô
+- Săn thành công ngay lập tức (không cần đợi timer)
+- Tăng tốc độ đuổi theo (1.5x)
+- Giảm fail chance từ 10% → 5%
+- Xóa damage khi săn thất bại
+
+### 2. Bảo Vệ Predator
+
+- Tăng health recovery khi ăn: 1 → 3
+- Giảm hungerRate predator: 2 → 1
+- Giảm reproduction cooldown predator
+- Tăng giới hạn quần thể predator
+- Giảm giới hạn quần thể prey
+
+### 3. Mở Rộng Chuỗi Thức Ăn
+
+- Predator (Wolf, Tiger, Crocodile, Human) có thể ăn Duck
+- Duck có thể ăn Grass và Fruit Tree
+
+### 4. Tối Ưu Code
+
+- Xóa biến không dùng (huntingTimer, currentPrey)
+- Thêm comment tiếng Việt
+- Đơn giản hóa logic heal
+
+### 5. Sửa Lỗi
+
+- HunterStrategy cho Human (thay vì PassiveStrategy)
+- Predator không ăn plant khi không có prey
+- Crocodile tăng tốc để đuổi kịp Duck trong nước
+
+## Ghi Chú Kỹ Thuật
+
+### HunterStrategy
+
+- **Phạm vi nhìn thấy:** 4.0 ô
+- **Phạm vi săn:** 2.0 ô
+- **Tăng tốc:** 1.5x (trên đất), giữ nguyên (trong nước)
+- **Fail chance:** 5%
+- **Bảo tồn:** Không săn nếu prey < 3
+
+### Animal
+
+- **Health:** 100
+- **Attack Damage:** 100 (predator)
+- **Hunger Rate:** 1 (predator), 3 (herbivore mặc định)
+- **Eat Timer:** 3 ticks (1.5 giây)
+- **Drink Timer:** 2 ticks (1 giây)
+
+## Tác Giả
+
+- Project OOP - Hệ sinh thái hoang dã
+- Năm: 2025
+
+## Giấy Phép
+
+- Project học tập - Mục đích giáo dục

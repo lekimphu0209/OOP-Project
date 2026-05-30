@@ -1,44 +1,87 @@
 package ecosystem.view;
 
+/**
+ * LEGACY VIEW - God Class (235 lines)
+ * 
+ * This is the old view system that combined UI, camera, rendering, and input handling.
+ * Still used by MainLegacy.java for backward compatibility.
+ * 
+ * For the new modular view system, see:
+ * - ecosystem.ui.views.SimulationView
+ * - ecosystem.ui.panels.MapPanel
+ * - ecosystem.ui.panels.ControlToolbar
+ * - ecosystem.ui.panels.StatusPanel
+ * - ecosystem.ui.camera.CameraController
+ */
+
+import ecosystem.controller.SimulationController;
 import ecosystem.entities.Animal;
 import ecosystem.entities.Plant;
 import ecosystem.environment.Environment;
 import ecosystem.physics.Vector2D;
 import ecosystem.terrain.Tile;
 import ecosystem.terrain.TerrainType;
+import ecosystem.view.render.IRenderStrategy;
+import ecosystem.view.render.legacy.BasicRenderer;
+import ecosystem.view.render.legacy.AdvancedRenderer;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
-public class BasicView extends JFrame {
+public class BasicView extends JFrame implements IObserver {
     protected Environment environment;
+    protected SimulationController controller;
     protected JPanel mapPanel;
     protected JLabel infoLabel;
-    protected int cellSize = 30;
-    protected double zoomLevel = 1.0;
-    protected int offsetX = 0;
-    protected int offsetY = 0;
-    protected Point lastMousePos;
-    protected String actionMode = "plant_food"; // plant_food or place_obstacle
+    protected CameraController camera;
+    protected InputHandler inputHandler;
+    protected String actionMode = "inspect"; // inspect, plant_food, or place_obstacle
+    protected IRenderStrategy currentRenderer;
+    protected boolean useGraphicMode = false; // false: Basic, true: Đồ họa
+    protected ControlPanel controlPanel;
 
     public BasicView(Environment environment) {
         this.environment = environment;
+        this.environment.registerObserver(this);
+        this.currentRenderer = new BasicRenderer();
+        this.camera = new CameraController();
+        setupWindow();
+        createMapPanel();
+        setupMouseListeners();
+        layoutComponents();
+    }
+
+    private void setupWindow() {
         setTitle("Wild-Life Eco Simulation - Basic Mode");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(800, 900);
         setLayout(new BorderLayout());
+    }
 
+    private void createMapPanel() {
         mapPanel = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                renderMap(g);
+                Graphics2D g2d = (Graphics2D) g;
+                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                if (currentRenderer != null) {
+                    currentRenderer.render(g2d, environment, camera.getCellSize(), camera.getZoomLevel(), 
+                                        camera.getOffsetX(), camera.getOffsetY(), getWidth(), getHeight());
+                }
             }
         };
+    }
 
-        // Add mouse listeners for manual control and camera panning
+    private void setupMouseListeners() {
+        this.inputHandler = new InputHandler(mapPanel, camera);
+        mapPanel.addMouseListener(inputHandler.createMousePressListener());
+        mapPanel.addMouseMotionListener(inputHandler.createMouseMotionListener());
+        mapPanel.addMouseWheelListener(inputHandler.createMouseWheelListener());
+        
+        // Keep map click handler in BasicView
         mapPanel.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -46,76 +89,63 @@ public class BasicView extends JFrame {
                     handleMapClick(e);
                 }
             }
-
-            @Override
-            public void mousePressed(MouseEvent e) {
-                lastMousePos = e.getPoint();
-            }
         });
+    }
 
-        mapPanel.addMouseMotionListener(new MouseAdapter() {
-            @Override
-            public void mouseDragged(MouseEvent e) {
-                if (SwingUtilities.isRightMouseButton(e)) {
-                    offsetX += e.getX() - lastMousePos.x;
-                    offsetY += e.getY() - lastMousePos.y;
-                    lastMousePos = e.getPoint();
-                    mapPanel.repaint();
-                }
-            }
-        });
-
-        // Add mouse wheel listener for zooming
-        mapPanel.addMouseWheelListener(e -> {
-            double oldZoom = zoomLevel;
-            if (e.getWheelRotation() < 0) {
-                zoomLevel = Math.min(zoomLevel * 1.1, 5.0); // Zoom in
-            } else {
-                zoomLevel = Math.max(zoomLevel / 1.1, 0.2); // Zoom out
-            }
-            
-            // Adjust offset to zoom towards mouse position
-            double zoomFactor = zoomLevel / oldZoom;
-            offsetX = (int) (e.getX() - (e.getX() - offsetX) * zoomFactor);
-            offsetY = (int) (e.getY() - (e.getY() - offsetY) * zoomFactor);
-            
-            mapPanel.repaint();
-        });
-
+    private void layoutComponents() {
         infoLabel = new JLabel("Thông tin hệ sinh thái");
-        
-        // Control panel
-        JPanel controlPanel = new JPanel();
-        JButton plantFoodBtn = new JButton("Trồng thức ăn");
-        JButton placeObstacleBtn = new JButton("Đặt vật cản");
-        
-        plantFoodBtn.addActionListener(e -> {
-            actionMode = "plant_food";
-            infoLabel.setText("Chế độ: Trồng thức ăn - Click vào bản đồ để trồng");
-        });
-        
-        placeObstacleBtn.addActionListener(e -> {
-            actionMode = "place_obstacle";
-            infoLabel.setText("Chế độ: Đặt vật cản - Click vào bản đồ để đặt");
-        });
-        
-        controlPanel.add(plantFoodBtn);
-        controlPanel.add(placeObstacleBtn);
-        
-        add(controlPanel, BorderLayout.NORTH);
+        controlPanel = new ControlPanel(this, controller);
+        add(controlPanel.createControlPanel(), BorderLayout.NORTH);
         add(mapPanel, BorderLayout.CENTER);
         add(infoLabel, BorderLayout.SOUTH);
     }
 
+    public void setActionMode(String mode, String message) {
+        actionMode = mode;
+        infoLabel.setText(message);
+    }
+
+    public void toggleRenderer(JButton btn) {
+        useGraphicMode = !useGraphicMode;
+        if (useGraphicMode) {
+            currentRenderer = new AdvancedRenderer();
+            btn.setText("Chế độ: Đồ họa");
+            setTitle("Wild-Life Eco Simulation - Đồ họa Mode");
+        } else {
+            currentRenderer = new BasicRenderer();
+            btn.setText("Chế độ: Basic");
+            setTitle("Wild-Life Eco Simulation - Basic Mode");
+        }
+        mapPanel.repaint();
+    }
+
     protected void handleMapClick(MouseEvent e) {
-        int currentCellSize = (int) (cellSize * zoomLevel);
-        int x = (e.getX() - offsetX) / currentCellSize;
-        int y = (e.getY() - offsetY) / currentCellSize;
+        int currentCellSize = (int) (camera.getCellSize() * camera.getZoomLevel());
+        int x = (e.getX() - camera.getOffsetX()) / currentCellSize;
+        int y = (e.getY() - camera.getOffsetY()) / currentCellSize;
         
         if (x < 0 || y < 0 || x >= environment.getGrid().getWidth() || y >= environment.getGrid().getHeight()) {
             return;
         }
 
+        // Check for animal at clicked position first
+        Animal clickedAnimal = null;
+        for (Animal animal : environment.getAnimals()) {
+            if (animal == null) continue;
+            int ax = (int) animal.getPosition().getX();
+            int ay = (int) animal.getPosition().getY();
+            if (ax == x && ay == y) {
+                clickedAnimal = animal;
+                break;
+            }
+        }
+
+        if (clickedAnimal != null) {
+            showAnimalInfo(clickedAnimal);
+            return;
+        }
+
+        // If no animal clicked, proceed with action mode
         if (actionMode.equals("plant_food")) {
             Tile tile = environment.getGrid().getTile(x, y);
             if (tile != null && (tile.getType() == TerrainType.GRASS || tile.getType() == TerrainType.FOREST)) {
@@ -130,96 +160,46 @@ public class BasicView extends JFrame {
                 tile.setType(TerrainType.OBSTACLE);
                 infoLabel.setText("Đã đặt vật cản tại (" + x + ", " + y + ")");
             }
-        }
-        mapPanel.repaint();
-    }
-
-    protected void renderMap(Graphics g) {
-        int currentCellSize = (int) (cellSize * zoomLevel);
-        Tile[][] tiles = environment.getGrid().getAllTiles();
-
-        int startX = Math.max(0, -offsetX / currentCellSize);
-        int startY = Math.max(0, -offsetY / currentCellSize);
-        int endX = Math.min(tiles.length, (mapPanel.getWidth() - offsetX) / currentCellSize + 1);
-        int endY = Math.min(tiles[0].length, (mapPanel.getHeight() - offsetY) / currentCellSize + 1);
-
-        for (int i = startX; i < endX; i++) {
-            for (int j = startY; j < endY; j++) {
-                Tile tile = tiles[i][j];
-                int x = i * currentCellSize + offsetX;
-                int y = j * currentCellSize + offsetY;
-
-                switch (tile.getType()) {
-                    case GRASS: g.setColor(new Color(34, 139, 34)); break;
-                    case FOREST: g.setColor(new Color(0, 100, 0)); break;
-                    case WATER: g.setColor(new Color(30, 144, 255)); break;
-                    case MUD: g.setColor(new Color(139, 69, 19)); break;
-                    case OBSTACLE: g.setColor(new Color(128, 128, 128)); break;
-                }
-                g.fillRect(x, y, currentCellSize, currentCellSize);
-                if (zoomLevel > 0.5) {
-                    g.setColor(new Color(0, 0, 0, 30));
-                    g.drawRect(x, y, currentCellSize, currentCellSize);
-                }
-            }
-        }
-
-        for (Plant plant : environment.getPlants()) {
-            int i = (int) plant.getPosition().getX();
-            int j = (int) plant.getPosition().getY();
-            if (i < startX || i >= endX || j < startY || j >= endY) continue;
-
-            int x = i * currentCellSize + offsetX + currentCellSize / 2;
-            int y = j * currentCellSize + offsetY + currentCellSize / 2;
-            int size = (int) ((plant.getType().equals("Cỏ") ? 10 : 16) * zoomLevel);
-
-            if (plant.getType().equals("Cỏ")) g.setColor(new Color(50, 205, 50));
-            else g.setColor(new Color(255, 165, 0));
-            g.fillOval(x - size/2, y - size/2, size, size);
-        }
-
-        for (Animal animal : environment.getAnimals()) {
-            int i = (int) animal.getPosition().getX();
-            int j = (int) animal.getPosition().getY();
-            if (i < startX || i >= endX || j < startY || j >= endY) continue;
-
-            int x = i * currentCellSize + offsetX + currentCellSize / 2;
-            int y = j * currentCellSize + offsetY + currentCellSize / 2;
-            int size = (int) (16 * zoomLevel);
-
-            g.setColor(getAnimalColor(animal));
-            if (animal.isPredator()) g.fillRect(x - size/2, y - size/2, size, size);
-            else g.fillOval(x - size/2, y - size/2, size, size);
-
-            if (zoomLevel > 0.8) {
-                int healthW = (int) (20 * zoomLevel);
-                g.setColor(Color.RED);
-                g.fillRect(x - healthW/2, y - size/2 - 5, healthW, 3);
-                g.setColor(Color.GREEN);
-                g.fillRect(x - healthW/2, y - size/2 - 5, (int) (healthW * animal.getHealth() / 100.0), 3);
-            }
+            updateView();
         }
     }
 
-    protected Color getAnimalColor(Animal animal) {
-        switch (animal.getName()) {
-            case "Thỏ": return Color.WHITE;
-            case "Hươu": return new Color(139, 69, 19);
-            case "Sói": return Color.GRAY;
-            case "Hổ": return Color.ORANGE;
-            case "Voi": return new Color(169, 169, 169);
-            case "Người": return Color.BLUE;
-            case "Cá": return new Color(0, 255, 255);
-            case "Vịt": return Color.YELLOW;
-            case "Cá sấu": return new Color(0, 100, 0);
-            default: return Color.BLACK;
+    protected void showAnimalInfo(Animal animal) {
+        String strategyName = animal.getStrategy() != null ? animal.getStrategy().getClass().getSimpleName() : "N/A";
+        String stateName = animal.getState() != null ? animal.getState().getClass().getSimpleName() : "N/A";
+        
+        String info = String.format(
+            "%s | Máu: %d/%d | Đói: %d | Khát: %d | Tốc độ: %.1f | Ưu tiên: %d | Chiến lược: %s | Trạng thái: %s",
+            animal.getName(),
+            animal.getHealth(),
+            animal.getHealth() > 0 ? 100 : 0,
+            animal.getHunger(),
+            animal.getThirst(),
+            animal.getBaseSpeed(),
+            animal.getPriority(),
+            strategyName,
+            stateName
+        );
+        infoLabel.setText(info);
+    }
+
+    public void setController(SimulationController controller) {
+        this.controller = controller;
+        if (controlPanel != null) {
+            controlPanel.setController(controller);
         }
     }
 
     public void update() {
         mapPanel.repaint();
+        String pauseStatus = controller != null && controller.isPaused() ? " [TẠM DỪNG]" : "";
         infoLabel.setText("Mùa: " + environment.getSeason().getName() + " (" + environment.getSeason().getDescription() + ")" +
-                        " | Động vật: " + environment.getAnimals().size() + 
-                        " | Thực vật: " + environment.getPlants().size());
+                        " | Động vật: " + environment.getAnimals().size() +
+                        " | Thực vật: " + environment.getPlants().size() + pauseStatus);
+    }
+
+    @Override
+    public void updateView() {
+        update();
     }
 }
