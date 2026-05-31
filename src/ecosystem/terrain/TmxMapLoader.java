@@ -21,7 +21,7 @@ public final class TmxMapLoader {
      * - 274 -> WATER (overlay)
      * - 36  -> FOREST
      * - 172 -> MUD (soil layer)
-     * - 164 -> OBSTACLE (rock layer)
+     * - 15 -> OBSTACLE (rock layer)
      * - 0   -> empty/no override
      *
      * If your tileset uses different IDs, adjust gidToTerrain().
