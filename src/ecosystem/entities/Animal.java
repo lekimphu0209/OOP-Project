@@ -16,6 +16,7 @@ package ecosystem.entities;
  * - ecosystem.entities.components.Animation
  */
 
+import ecosystem.SimulationConfig;
 import ecosystem.behavior.*;
 import ecosystem.environment.SeasonManager;
 import ecosystem.environment.Environment;
@@ -25,6 +26,9 @@ import ecosystem.view.render.IRenderStrategy;
 import ecosystem.physics.ICollidable;
 import ecosystem.physics.IMovable;
 import ecosystem.physics.IYieldable;
+
+import java.util.Objects;
+import java.util.Random;
 
 public abstract class Animal extends Entity implements ICollidable, IMovable, IYieldable {
     protected String name;
@@ -43,7 +47,14 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
     protected int attackDamage;
     protected boolean canSwim = false;
     protected boolean canWalk = true;
-    protected int hungerRate = 3;
+    protected int hungerRate = 4;
+    /** Hệ số đói/khát theo loài (1.0 = mặc định; <1 chậm hơn; >1 nhanh hơn). */
+    protected double metabolismFactor = 1.0;
+    /** Hệ số sát thương khi đói/khát (<1 = chết chậm hơn dù đói). */
+    protected double starvationDamageFactor = 1.0;
+    /** Ngưỡng đói/khát trước khi mất máu (-1 = dùng mặc định theo loài). */
+    protected int hungerDamageThreshold = -1;
+    protected int thirstDamageThreshold = -1;
     protected int staminaRate = 1;
     protected int reproductionCooldown = 0;
     protected int reproductionCooldownMax = 100; // ticks
@@ -53,14 +64,23 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
     protected int restTimer = 0;
     protected int eatTimer = 0;
     protected int drinkTimer = 0;
-    
-    // Movement control for sequential cell movement
-    protected Vector2D targetPosition;
-    protected double movementProgress = 0.0;
-    
-    // AI memory
+    /** Sau khi đói, được ân đại trước khi starvation gây damage. */
+    protected int starvationGraceTicks = 0;
+    private int stuckTicks = 0;
+    private double lastDisplayX;
+    private double lastDisplayY;
+
+    // Continuous world position (cells as floats); grid cell kept in Entity.position
+    private double displayX;
+    private double displayY;
+
+    // AI memory (không dùng để chọn hướng — tránh đi cùng một quỹ đạo)
     protected java.util.Set<String> visitedPositions = new java.util.HashSet<>();
     protected int explorationRange = 5;
+
+    /** RNG riêng từng con → hướng lang thang khác nhau. */
+    private final Random pathRandom;
+    private int wanderTurnTicks;
 
     public Animal(Vector2D position, double radius, String name, int health, double speed, int priority,
             boolean predator) {
@@ -78,76 +98,190 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
         this.priority = priority;
         this.predator = predator;
         this.attackDamage = predator ? 100 : 0;
-        this.reproductionCooldownMax = 100; // Default: 100 ticks (5 seconds)
+        setLegacyReproductionCooldown(100);
+        pathRandom = new Random(Objects.hash(name, (int) position.getX(), (int) position.getY(),
+                System.identityHashCode(this)));
+        wanderTurnTicks = pathRandom.nextInt(8);
+        syncDisplayToGrid();
+        lastDisplayX = displayX;
+        lastDisplayY = displayY;
+        pickRandomWanderDirectionNow();
+    }
+
+    /** Đổi hướng ngẫu nhiên; giữ vài tick rồi mới đổi lại (đi tự nhiên, không trùng đàn). */
+    public void pickRandomWanderDirection() {
+        if (wanderTurnTicks > 0) {
+            wanderTurnTicks--;
+            return;
+        }
+        pickRandomWanderDirectionNow();
+        wanderTurnTicks = 3 + pathRandom.nextInt(12);
+    }
+
+    /** Đổi hướng ngay lập tức. */
+    public void pickRandomWanderDirectionNow() {
+        double angle = pathRandom.nextDouble() * 2 * Math.PI;
+        setDirection(new Vector2D(Math.cos(angle), Math.sin(angle)));
+    }
+
+    public int pickPathRandomIndex(int bound) {
+        if (bound <= 0) {
+            return 0;
+        }
+        return pathRandom.nextInt(bound);
+    }
+
+    protected void setLegacyReproductionCooldown(int legacyTicks) {
+        this.reproductionCooldownMax = SimulationConfig.reproductionCooldownTicks(legacyTicks);
+    }
+
+    /** Vị trí float dùng để vẽ; logic lưới dùng {@link #getPosition()}. */
+    public Vector2D getRenderPosition() {
+        return new Vector2D(displayX, displayY);
+    }
+
+    /** +1 = phải, -1 = trái (lật sprite). */
+    public int getFacingSign() {
+        if (Math.abs(direction.getX()) > 0.05) {
+            return direction.getX() > 0 ? 1 : -1;
+        }
+        if (Math.abs(velocity.getX()) > 0.01) {
+            return velocity.getX() > 0 ? 1 : -1;
+        }
+        return 1;
+    }
+
+    public boolean isMoving() {
+        return Math.abs(velocity.getX()) > 0.01 || Math.abs(velocity.getY()) > 0.01;
+    }
+
+    private void syncDisplayToGrid() {
+        displayX = position.getX();
+        displayY = position.getY();
+    }
+
+    public void snapToCell(Vector2D cell) {
+        position = cell;
+        displayX = cell.getX();
+        displayY = cell.getY();
+    }
+
+    @Override
+    public void setPosition(Vector2D position) {
+        super.setPosition(position);
+        syncDisplayToGrid();
     }
 
     public void act(Environment env) {
-        updateBiologicalStats(env);
+        updateMetabolism(env);
         handleActionTimers();
         handleBasicNeeds(env);
         decreaseReproductionCooldown();
 
         state.handle(this, env);
         strategy.execute(this, env);
+        ensureMovementDirection();
         move(env);
+        applyStarvationDamage(env);
         updateMemory();
     }
 
-    private void updateBiologicalStats(Environment env) {
+    /** Cùng một ô lưới (ăn / săn phải chạm ô). */
+    public boolean sharesTileWith(Animal other) {
+        if (other == null) {
+            return false;
+        }
+        return (int) position.getX() == (int) other.getPosition().getX()
+                && (int) position.getY() == (int) other.getPosition().getY();
+    }
+
+    public boolean sharesTileWith(Vector2D otherPos) {
+        if (otherPos == null) {
+            return false;
+        }
+        return (int) position.getX() == (int) otherPos.getX()
+                && (int) position.getY() == (int) otherPos.getY();
+    }
+
+    public boolean isWithinRange(Vector2D otherPos, double radius) {
+        if (otherPos == null) {
+            return false;
+        }
+        return getRenderPosition().distanceTo(otherPos) <= radius;
+    }
+
+    public boolean isWithinRange(Animal other, double radius) {
+        return other != null && isWithinRange(other.getRenderPosition(), radius);
+    }
+
+    private void updateMetabolism(Environment env) {
         double seasonFactor = env.getSeason() == SeasonManager.Season.WINTER ? 1.5 : 1.0;
-        hunger += (int)(hungerRate * seasonFactor);
-        thirst += 0.5;
+        double metabolism = SimulationConfig.METABOLISM_MULT * metabolismFactor;
+        hunger += Math.max(0, (int) Math.round(
+                hungerRate * seasonFactor * SimulationConfig.legacyRate(1.0) * metabolism));
+        thirst += SimulationConfig.legacyRate(0.5) * metabolism;
         stamina -= staminaRate;
-        if (stamina < 0) stamina = 0;
-        applyStarvationDamage(env);
+        if (stamina < 0) {
+            stamina = 0;
+        }
+
+        if (hunger > SimulationConfig.HUNGER_SEEK_THRESHOLD) {
+            if (starvationGraceTicks <= 0) {
+                starvationGraceTicks = SimulationConfig.legacyTicks(SimulationConfig.STARVATION_GRACE_LEGACY_TICKS);
+            }
+        } else {
+            starvationGraceTicks = 0;
+        }
     }
 
     private void handleActionTimers() {
-        // Handle rest timer (predators after eating)
         if (restTimer > 0) {
             restTimer--;
-            actionState = "Nghỉ ngơi";
-            if (restTimer == 0) {
-                actionState = "";
+            if (predator && restTimer > 0) {
+                actionState = "Nghỉ ngơi";
             }
-            takeDamage(1); // Small penalty prevents immortality loops
-            if (restTimer > 5) {
-                return; // Stay still for most of rest time
+            if (restTimer == 0) {
+                if ("Nghỉ ngơi".equals(actionState)) {
+                    actionState = "";
+                }
+            }
+            if (restTimer % SimulationConfig.legacyTicks(5) == 0) {
+                takeDamage(Math.max(1, (int) Math.round(SimulationConfig.STARVATION_DAMAGE_MULT)));
             }
         }
 
-        // Handle drink timer
         if (drinkTimer > 0) {
             drinkTimer--;
             actionState = "Đang uống";
-            if (drinkTimer == 0) {
+            if (drinkTimer == 0 && "Đang uống".equals(actionState)) {
                 actionState = "";
             }
-            return; // Stay still while drinking
         }
 
-        // Handle eat timer (chewing time)
         if (eatTimer > 0) {
             eatTimer--;
             actionState = "Đang ăn";
-            if (eatTimer == 0) {
+            if (eatTimer == 0 && "Đang ăn".equals(actionState)) {
                 actionState = "";
             }
-            return; // Stay still while eating
         }
     }
 
+    /** Chỉ chặn di chuyển ngắn sau khi săn xong; ăn/uống không đứng hình. */
+    private boolean isMovementBlocked() {
+        return predator && restTimer > SimulationConfig.legacyTicks(1);
+    }
+
     private void handleBasicNeeds(Environment env) {
-        // Priority: thirst first, then hunger, then normal behavior
-        if (thirst > 30) {
+        if (thirst > SimulationConfig.HUNGER_SEEK_THRESHOLD) {
             actionState = "Tìm nước";
-        } else if (hunger > 30) {
+        } else if (hunger > SimulationConfig.HUNGER_SEEK_THRESHOLD) {
             actionState = "Tìm thức ăn";
         }
     }
 
     private void updateMemory() {
-        String posKey = (int)position.getX() + "," + (int)position.getY();
+        String posKey = (int) position.getX() + "," + (int) position.getY();
         visitedPositions.add(posKey);
         if (visitedPositions.size() > 100) {
             visitedPositions.clear();
@@ -155,23 +289,87 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
     }
 
     public void move(Environment env) {
-        double speed = calculateSpeed(env);
-        Vector2D targetPosition = calculateTargetPosition();
+        if (isMovementBlocked()) {
+            velocity = new Vector2D(0, 0);
+            return;
+        }
 
-        if (canMoveTo(env, targetPosition)) {
-            executeMove(targetPosition, speed);
-        } else {
-            // Thử tìm hướng di chuyển hợp lệ
+        Vector2D nextCell = calculateTargetPosition();
+        if (isSameGridCell(nextCell, position)) {
+            changeDirectionRandomly();
+            nextCell = calculateTargetPosition();
+        }
+        if (!canEnterTile(env, nextCell)) {
             for (int i = 0; i < 8; i++) {
                 changeDirectionRandomly();
-                targetPosition = calculateTargetPosition();
-                if (canMoveTo(env, targetPosition)) {
-                    executeMove(targetPosition, speed);
+                nextCell = calculateTargetPosition();
+                if (canEnterTile(env, nextCell)) {
+                    break;
+                }
+                if (i == 7) {
+                    velocity = new Vector2D(0, 0);
                     return;
                 }
             }
-            // Nếu vẫn không tìm được hướng hợp lệ, giữ nguyên vị trí
         }
+
+        double step = cellsPerTick(env);
+        double dx = nextCell.getX() - displayX;
+        double dy = nextCell.getY() - displayY;
+        double dist = Math.hypot(dx, dy);
+        if (dist < 1e-6) {
+            velocity = new Vector2D(0, 0);
+            return;
+        }
+
+        double moveStep = Math.min(step, dist);
+        displayX += (dx / dist) * moveStep;
+        displayY += (dy / dist) * moveStep;
+        velocity = new Vector2D(dx / dist, dy / dist).multiply(calculateSpeed(env));
+
+        if (moveStep >= dist - 1e-6) {
+            enterGridCell(env, nextCell);
+        }
+
+        trackStuckAndRecover();
+    }
+
+    private void trackStuckAndRecover() {
+        double dx = displayX - lastDisplayX;
+        double dy = displayY - lastDisplayY;
+        if (dx * dx + dy * dy < 0.0004) {
+            stuckTicks++;
+        } else {
+            stuckTicks = 0;
+        }
+        lastDisplayX = displayX;
+        lastDisplayY = displayY;
+
+        if (stuckTicks >= 10 && !isMovementBlocked()) {
+            changeDirectionRandomly();
+            stuckTicks = 0;
+        }
+    }
+
+    private void ensureMovementDirection() {
+        if (direction.magnitude() < 0.01) {
+            changeDirectionRandomly();
+        }
+    }
+
+    private static boolean isSameGridCell(Vector2D a, Vector2D b) {
+        return a != null && b != null
+                && (int) a.getX() == (int) b.getX()
+                && (int) a.getY() == (int) b.getY();
+    }
+
+    private double cellsPerTick(Environment env) {
+        return calculateSpeed(env) * SimulationConfig.legacyRate(1.0) * SimulationConfig.MOVEMENT_SPEED_MULT;
+    }
+
+    private void enterGridCell(Environment env, Vector2D cell) {
+        displaceYieldingAnimals(env, cell);
+        snapToCell(cell);
     }
 
     private double calculateSpeed(Environment env) {
@@ -181,67 +379,125 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
     private Vector2D calculateTargetPosition() {
         int currentX = (int) position.getX();
         int currentY = (int) position.getY();
-        
+
         int targetX = currentX;
         int targetY = currentY;
-        
-        if (direction.getX() > 0.5) targetX++;
-        else if (direction.getX() < -0.5) targetX--;
-        if (direction.getY() > 0.5) targetY++;
-        else if (direction.getY() < -0.5) targetY--;
-        
+
+        double dx = direction.getX();
+        double dy = direction.getY();
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            if (dx > 0.05) {
+                targetX++;
+            } else if (dx < -0.05) {
+                targetX--;
+            }
+        } else {
+            if (dy > 0.05) {
+                targetY++;
+            } else if (dy < -0.05) {
+                targetY--;
+            }
+        }
+
         return new Vector2D(targetX, targetY);
     }
 
     private boolean canMoveTo(Environment env, Vector2D target) {
+        return canEnterTile(env, target);
+    }
+
+    private boolean canEnterTile(Environment env, Vector2D target) {
         int targetX = (int) target.getX();
         int targetY = (int) target.getY();
 
-        boolean isWater = env.getGrid().getTile(targetX, targetY) != null &&
-                         env.getGrid().getTile(targetX, targetY).getType() == ecosystem.terrain.TerrainType.WATER;
-
-        boolean isForest = env.getGrid().getTile(targetX, targetY) != null &&
-                          env.getGrid().getTile(targetX, targetY).getType() == ecosystem.terrain.TerrainType.FOREST;
-
-        // Predators and humans cannot enter forest
-        if (isForest && (isPredator() || this.getClass().getSimpleName().equals("Human"))) {
+        if (!isTerrainPassable(env, targetX, targetY)) {
             return false;
         }
 
-        // Check collision with other animals (unless hunting)
         int animalsInTargetTile = 0;
         for (Animal other : env.getAnimals()) {
-            if (other == null || other == this) continue;
-            if (!other.isAlive()) continue;
+            if (other == null || other == this || !other.isAlive()) {
+                continue;
+            }
 
             int otherX = (int) other.getPosition().getX();
             int otherY = (int) other.getPosition().getY();
-
-            if (otherX == targetX && otherY == targetY) {
-                animalsInTargetTile++;
-                // Allow collision only if hunting (predator chasing prey) and max 2 animals
-                if (isPredator() && canEat(other) && animalsInTargetTile <= 1) {
-                    continue; // Allow to attack prey (will be 2 animals total)
-                }
-                return false; // Block movement to occupied tile
+            if (otherX != targetX || otherY != targetY) {
+                continue;
             }
+
+            animalsInTargetTile++;
+            if (isPredator() && canEat(other) && animalsInTargetTile <= 1) {
+                continue;
+            }
+            if (other.mustYieldTo(this)) {
+                continue;
+            }
+            return false;
         }
 
+        return true;
+    }
+
+    private boolean isTerrainPassable(Environment env, int targetX, int targetY) {
+        var tile = env.getGrid().getTile(targetX, targetY);
+        boolean isWater = tile != null && tile.getType() == TerrainType.WATER;
+        boolean isForest = tile != null && tile.getType() == TerrainType.FOREST;
+
+        if (isForest && (isPredator() || this instanceof Human)) {
+            return false;
+        }
         if (isWater) {
             return canSwim;
-        } else {
-            return canWalk && env.isWalkable(targetX, targetY);
+        }
+        return canWalk && env.isWalkable(targetX, targetY);
+    }
+
+    private void displaceYieldingAnimals(Environment env, Vector2D target) {
+        int targetX = (int) target.getX();
+        int targetY = (int) target.getY();
+
+        for (Animal other : env.getAnimals()) {
+            if (other == null || other == this || !other.isAlive()) {
+                continue;
+            }
+            int otherX = (int) other.getPosition().getX();
+            int otherY = (int) other.getPosition().getY();
+            if (otherX != targetX || otherY != targetY) {
+                continue;
+            }
+            if (isPredator() && canEat(other)) {
+                continue;
+            }
+            if (other.mustYieldTo(this)) {
+                displaceToAdjacentTile(other, env);
+            }
         }
     }
 
-    private void executeMove(Vector2D target, double speed) {
-        position = target;
-        velocity = direction.multiply(speed);
+    private void displaceToAdjacentTile(Animal animal, Environment env) {
+        int ox = (int) animal.getPosition().getX();
+        int oy = (int) animal.getPosition().getY();
+        int[][] offsets = {
+            {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+            {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
+        };
+        int start = pathRandom.nextInt(offsets.length);
+        for (int i = 0; i < offsets.length; i++) {
+            int[] d = offsets[(start + i) % offsets.length];
+            Vector2D candidate = new Vector2D(ox + d[0], oy + d[1]);
+            if (animal.canEnterTile(env, candidate)) {
+                animal.snapToCell(candidate);
+                animal.setActionState("Nhường đường");
+                return;
+            }
+        }
     }
 
     private void changeDirectionRandomly() {
-        direction = new Vector2D(Math.random() - 0.5, Math.random() - 0.5).normalize();
+        pickRandomWanderDirectionNow();
         velocity = new Vector2D(0, 0);
+        wanderTurnTicks = 2 + pathRandom.nextInt(6);
     }
 
     public Entity findFood(Environment env) {
@@ -251,33 +507,32 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
     public void eat() {
         eat(null);
     }
-    
+
     public void eat(Entity food) {
+        if (eatTimer > 0) {
+            return;
+        }
         hunger = 0;
-        eatTimer = 3; // 3 ticks (1.5 giây) thời gian nhai
-        // Hồi máu cho cả predator và herbivore (giúp predator sống sót)
+        starvationGraceTicks = SimulationConfig.legacyTicks(SimulationConfig.STARVATION_GRACE_LEGACY_TICKS);
+        eatTimer = SimulationConfig.legacyTicks(1);
         health = Math.min(health + 3, 100);
 
-        // Nếu ăn thực vật, đánh dấu là đã ăn
         if (food instanceof Plant) {
             ((Plant) food).beEaten();
         }
 
-        // Predator cần nghỉ ngơi sau khi ăn
         if (predator) {
-            restTimer = 10; // Nghỉ trong 10 ticks
+            restTimer = SimulationConfig.legacyTicks(3);
         }
-        // Herbivore không cần thời gian chờ ăn - ăn xong tiếp tục di chuyển
     }
 
-    // Uống nước
     public boolean drink(Environment env) {
-        if (env.hasWaterNearby(this)) {
-            thirst = 0;
-            drinkTimer = 2; // 2 ticks (1 giây) thời gian uống
-            return true;
+        if (drinkTimer > 0 || !env.hasWaterNearby(this)) {
+            return false;
         }
-        return false;
+        thirst = 0;
+        drinkTimer = SimulationConfig.legacyTicks(1);
+        return true;
     }
 
     public void takeDamage(int damage) {
@@ -285,16 +540,25 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
     }
 
     private void applyStarvationDamage(Environment env) {
-        int threshold = predator ? 40 : 50;
-        if (hunger <= threshold && thirst <= 50) return;
+        if (starvationGraceTicks > 0) {
+            starvationGraceTicks--;
+            return;
+        }
+
+        int hungerThreshold = hungerDamageThreshold >= 0 ? hungerDamageThreshold : (predator ? 35 : 45);
+        int thirstThreshold = thirstDamageThreshold >= 0 ? thirstDamageThreshold : 42;
+        if (hunger <= hungerThreshold && thirst <= thirstThreshold) {
+            return;
+        }
 
         double damageMultiplier = env.getSeason() == SeasonManager.Season.WINTER ? 1.5 : 1.0;
-        int baseDamage = predator ? 10 : 3;
-        takeDamage((int) (baseDamage * damageMultiplier));
+        int baseDamage = predator ? 12 : 5;
+        double damageScale = SimulationConfig.STARVATION_DAMAGE_MULT * starvationDamageFactor;
+        takeDamage((int) Math.max(1, baseDamage * damageMultiplier * damageScale));
 
-        // Extra penalty for extreme starvation/dehydration.
-        if (hunger > 70 || thirst > 70) {
-            takeDamage((int) (3 * damageMultiplier));
+        int extremeThreshold = predator ? 72 : 62;
+        if (hunger > extremeThreshold || thirst > extremeThreshold) {
+            takeDamage((int) Math.max(1, 4 * damageMultiplier * damageScale));
         }
     }
 
@@ -307,10 +571,13 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
     }
 
     public void setDirection(Vector2D direction) {
-        this.direction = direction;
+        if (direction == null || direction.magnitude() < 0.01) {
+            changeDirectionRandomly();
+            return;
+        }
+        this.direction = direction.normalize();
     }
 
-    // Getters and Setters
     public String getName() {
         return name;
     }
@@ -396,6 +663,7 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
         return priority;
     }
 
+    /** Con priority thấp hơn phải nhường đường cho con priority cao hơn. */
     @Override
     public boolean mustYieldTo(IYieldable other) {
         return other.getPriority() > this.priority;
@@ -415,58 +683,55 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
 
     @Override
     public void update() {
-        // Update logic handled by act() method
     }
 
     public boolean isAlive() {
         return health > 0;
     }
-    
+
     public String getActionState() {
         return actionState;
     }
-    
+
     public void setActionState(String state) {
         this.actionState = state;
     }
-    
-    public boolean hasVisitedPosition(int x, int y) {
-        return visitedPositions.contains(x + "," + y);
+
+    public void decreaseReproductionCooldown() {
+        if (reproductionCooldown > 0) {
+            reproductionCooldown--;
+        }
     }
-    
+
     public void setExplorationRange(int range) {
         this.explorationRange = range;
     }
-    
+
     public int getExplorationRange() {
         return explorationRange;
     }
-    
-    // Enemy detection - override in subclasses for specific enemies
+
     public boolean isEnemy(Animal other) {
         return other.isPredator() && !this.isPredator();
     }
-    
-    // Food preference - override in subclasses for specific food
+
     public boolean canEat(Animal other) {
-        // Default: predator eats any prey
         return this.isPredator() && !other.isPredator();
     }
-    
+
     public boolean canEat(Plant plant) {
-        // Default: herbivore eats any plant, predators CANNOT eat plants
         return !this.isPredator();
     }
-    
+
     public Animal findNearestEnemy(Environment env) {
         Animal nearest = null;
         double minDistance = Double.MAX_VALUE;
         double visionRange = 5.0;
-        
+
         for (Animal other : env.getAnimals()) {
             if (other == null) continue;
             if (other != this && other.isAlive() && isEnemy(other)) {
-                double distance = this.getPosition().distanceTo(other.getPosition());
+                double distance = getRenderPosition().distanceTo(other.getRenderPosition());
                 if (distance < minDistance && distance <= visionRange) {
                     minDistance = distance;
                     nearest = other;
@@ -475,13 +740,15 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
         }
         return nearest;
     }
-    
+
     public boolean enemyNearby(Environment env) {
         return findNearestEnemy(env) != null;
     }
 
-    // Reproduction methods
     public boolean canReproduce(Environment env) {
+        if (SimulationConfig.MANUAL_SPAWNING) {
+            return false;
+        }
         return hunger < 30 && thirst < 30 && stamina > 70 &&
                !enemyNearby(env) && reproductionCooldown <= 0 &&
                !env.hasReachedPopulationLimit(this.getClass());
@@ -492,8 +759,8 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
             if (other == null) continue;
             if (other != this && other.isAlive() &&
                 this.getClass().equals(other.getClass())) {
-                double distance = this.getPosition().distanceTo(other.getPosition());
-                if (distance <= 2.0) { // Trong phạm vi gần
+                double distance = getRenderPosition().distanceTo(other.getRenderPosition());
+                if (distance <= 2.0) {
                     return true;
                 }
             }
@@ -502,7 +769,6 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
     }
 
     public void reproduce(Environment env) {
-        // Tạo động vật con ở vị trí gần
         Vector2D childPosition = findRandomNearbyPosition(env);
         if (childPosition != null) {
             Animal child = createChild(childPosition);
@@ -513,11 +779,10 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
 
     protected Vector2D findRandomNearbyPosition(Environment env) {
         for (int i = 0; i < 8; i++) {
-            int dx = (int) (Math.random() * 3) - 1; // -1, 0, 1
+            int dx = (int) (Math.random() * 3) - 1;
             int dy = (int) (Math.random() * 3) - 1;
             int newX = (int) this.getPosition().getX() + dx;
             int newY = (int) this.getPosition().getY() + dy;
-
             if (newX >= 0 && newX < env.getGrid().getWidth() &&
                 newY >= 0 && newY < env.getGrid().getHeight() &&
                 env.isWalkable(newX, newY)) {
@@ -527,26 +792,17 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
         return null;
     }
 
-    protected Animal createChild(Vector2D position) {
-        // Override trong subclass để tạo động vật con cụ thể
-        return null;
+    protected abstract Animal createChild(Vector2D position);
+
+    public boolean hasVisitedPosition(int x, int y) {
+        return visitedPositions.contains(x + "," + y);
     }
 
     public int getReproductionCooldown() {
         return reproductionCooldown;
     }
 
-    public void setReproductionCooldown(int cooldown) {
-        this.reproductionCooldown = cooldown;
-    }
-
     public int getReproductionCooldownMax() {
         return reproductionCooldownMax;
-    }
-
-    public void decreaseReproductionCooldown() {
-        if (reproductionCooldown > 0) {
-            reproductionCooldown--;
-        }
     }
 }

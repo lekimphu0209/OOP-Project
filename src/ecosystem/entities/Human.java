@@ -7,13 +7,7 @@ public class Human extends Animal {
     public Human(Vector2D position) {
         super(position, 0.6, "Người", 100, 1.0, 5, true);
         this.setStrategy(new HunterStrategy());
-        this.reproductionCooldownMax = 200; // 10 seconds (200 ticks at 500ms/tick)
-    }
-
-    @Override
-    public boolean mustYieldTo(ecosystem.physics.IYieldable other) {
-        // Human never yields to anyone
-        return false;
+        setLegacyReproductionCooldown(200);
     }
 
     @Override

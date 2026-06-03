@@ -143,7 +143,9 @@ public class Environment implements ISubject {
         updatePlants();
         updateAnimals();
         removeDeadEntities();
-        spawnRandomPlants(); // Spawn thực vật mới thay thế
+        if (!ecosystem.SimulationConfig.MANUAL_SPAWNING) {
+            spawnRandomPlants();
+        }
     }
 
     private void updatePlants() {
@@ -153,10 +155,11 @@ public class Environment implements ISubject {
     }
 
     private void updateAnimals() {
-        for (Animal animal : new ArrayList<>(animals)) {
-            if (animal != null && animal.isAlive()) {
-                animal.act(this);
-            }
+        List<Animal> sorted = new ArrayList<>(animals);
+        sorted.removeIf(a -> a == null || !a.isAlive());
+        sorted.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
+        for (Animal animal : sorted) {
+            animal.act(this);
         }
     }
 
@@ -178,7 +181,8 @@ public class Environment implements ISubject {
 
     private void spawnRandomPlants() {
         // Spawn thực vật mới để thay thế thực vật đã bị ăn
-        if (plants.size() < 80 && Math.random() < 0.05) {
+        if (plants.size() < 80 && Math.random() < 0.05 / ecosystem.SimulationConfig.TICK_SCALE
+                * ecosystem.SimulationConfig.WORLD_SPAWN_CHANCE_MULT) {
             Vector2D position = findRandomWalkablePosition();
             if (position != null) {
                 Plant plant = createRandomPlant(position);

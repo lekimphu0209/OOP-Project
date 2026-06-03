@@ -12,7 +12,7 @@ public class Crocodile extends Animal {
         this.canWalk = true;
         this.setStrategy(new HunterStrategy());
         // attackDamage uses default 100 from Animal constructor
-        this.reproductionCooldownMax = 120; // 6 seconds (120 ticks at 500ms/tick) - reduced for survival
+        setLegacyReproductionCooldown(120);
     }
 
     @Override

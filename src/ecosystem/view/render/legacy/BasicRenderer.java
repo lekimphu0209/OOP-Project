@@ -3,6 +3,7 @@ package ecosystem.view.render.legacy;
 import ecosystem.entities.Animal;
 import ecosystem.entities.Plant;
 import ecosystem.environment.Environment;
+import ecosystem.physics.Vector2D;
 import ecosystem.terrain.Tile;
 import ecosystem.view.render.IRenderStrategy;
 
@@ -70,12 +71,13 @@ public class BasicRenderer implements IRenderStrategy {
 
         for (Animal animal : env.getAnimals()) {
             if (animal == null) continue;
-            int i = (int) animal.getPosition().getX();
-            int j = (int) animal.getPosition().getY();
-            if (i < startX || i >= endX || j < startY || j >= endY) continue;
+            Vector2D renderPos = animal.getRenderPosition();
+            double px = renderPos.getX();
+            double py = renderPos.getY();
+            if (px < startX - 1 || px >= endX || py < startY - 1 || py >= endY) continue;
 
-            int x = i * currentCellSize + offsetX + currentCellSize / 2;
-            int y = j * currentCellSize + offsetY + currentCellSize / 2;
+            int x = (int) (px * currentCellSize + offsetX + currentCellSize / 2);
+            int y = (int) (py * currentCellSize + offsetY + currentCellSize / 2);
             int size = (int) (16 * zoomLevel);
 
             g.setColor(getAnimalColor(animal));

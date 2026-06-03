@@ -6,9 +6,13 @@ import ecosystem.physics.Vector2D;
 public class Wolf extends Animal {
     public Wolf(Vector2D position) {
         super(position, 0.5, "Sói", 100, 1.5, 3, true);
-        this.hungerRate = 1;
+        this.hungerRate = 4;
+        this.metabolismFactor = 2.0; // Đói nhanh → đi săn thỏ
+        this.starvationDamageFactor = 0.32; // Chịu đói lâu, chết chậm khi chưa bắt được mồi
+        this.hungerDamageThreshold = 58;
+        this.thirstDamageThreshold = 55;
         this.setStrategy(new HunterStrategy());
-        this.reproductionCooldownMax = 90; // 4.5 seconds (90 ticks at 500ms/tick) - reduced for survival
+        setLegacyReproductionCooldown(90);
     }
 
     @Override

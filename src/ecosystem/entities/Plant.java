@@ -1,5 +1,6 @@
 package ecosystem.entities;
 
+import ecosystem.SimulationConfig;
 import ecosystem.physics.Vector2D;
 
 public class Plant extends Entity {
@@ -10,7 +11,7 @@ public class Plant extends Entity {
     private double nutritionValue;
     private boolean alive;
     private int respawnTimer = 0;
-    private static final int RESPAWN_TIME = 50; // 50 ticks before respawning
+    private static final int RESPAWN_TIME = SimulationConfig.legacyTicks(50);
 
     public Plant(Vector2D position, String type, boolean edible, double nutritionValue) {
         super(position, 0.5);

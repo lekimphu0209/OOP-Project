@@ -31,13 +31,8 @@ public class InputHandler {
         };
     }
 
-    public MouseAdapter createMousePressListener() {
-        return new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                lastMousePos = e.getPoint();
-            }
-        };
+    public void recordPress(MouseEvent e) {
+        lastMousePos = e.getPoint();
     }
 
     public MouseWheelListener createMouseWheelListener() {

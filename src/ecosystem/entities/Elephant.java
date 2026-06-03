@@ -5,9 +5,9 @@ import ecosystem.physics.Vector2D;
 
 public class Elephant extends Animal {
     public Elephant(Vector2D position) {
-        super(position, 1.0, "Voi", 100, 0.8, 5, false);
+        super(position, 1.0, "Voi", 100, 0.8, 6, false);
         this.setStrategy(new PassiveStrategy());
-        this.reproductionCooldownMax = 200; // 10 seconds (200 ticks at 500ms/tick)
+        setLegacyReproductionCooldown(200);
     }
 
     @Override

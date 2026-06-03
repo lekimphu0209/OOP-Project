@@ -4,6 +4,7 @@ import ecosystem.entities.Animal;
 import ecosystem.entities.Entity;
 import ecosystem.entities.Plant;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -23,39 +24,60 @@ public class FoodFinder {
         if (animal.isPredator()) {
             return findNearestPrey(animal);
         }
-        return findNearestPlant(animal);
+        return findPlantTarget(animal);
     }
 
-    private Entity findNearestPlant(Animal animal) {
-        Entity nearest = null;
+    private Entity findPlantTarget(Animal animal) {
+        List<Plant> candidates = new ArrayList<>();
         double minDistance = Double.MAX_VALUE;
 
         for (Plant plant : plants) {
-            if (plant.isEdible() && animal.canEat(plant)) {
-                double distance = animal.getPosition().distanceTo(plant.getPosition());
-                if (distance < minDistance) {
+            if (plant == null || !plant.isEdible() || !animal.canEat(plant)) {
+                continue;
+            }
+            double distance = animal.getRenderPosition().distanceTo(plant.getPosition());
+            if (distance < minDistance - 0.25) {
+                minDistance = distance;
+                candidates.clear();
+                candidates.add(plant);
+            } else if (distance <= minDistance + 2.0) {
+                if (candidates.isEmpty()) {
                     minDistance = distance;
-                    nearest = plant;
                 }
+                candidates.add(plant);
             }
         }
-        return nearest;
+
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        return candidates.get(animal.pickPathRandomIndex(candidates.size()));
     }
 
     private Animal findNearestPrey(Animal hunter) {
-        Animal nearest = null;
+        List<Animal> candidates = new ArrayList<>();
         double minDistance = Double.MAX_VALUE;
 
         for (Animal other : animals) {
-            if (other == null) continue;
-            if (other != hunter && other.isAlive() && hunter.canEat(other)) {
-                double distance = hunter.getPosition().distanceTo(other.getPosition());
-                if (distance < minDistance) {
+            if (other == null || other == hunter || !other.isAlive() || !hunter.canEat(other)) {
+                continue;
+            }
+            double distance = hunter.getRenderPosition().distanceTo(other.getRenderPosition());
+            if (distance < minDistance - 0.25) {
+                minDistance = distance;
+                candidates.clear();
+                candidates.add(other);
+            } else if (distance <= minDistance + 2.0) {
+                if (candidates.isEmpty()) {
                     minDistance = distance;
-                    nearest = other;
                 }
+                candidates.add(other);
             }
         }
-        return nearest;
+
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        return candidates.get(hunter.pickPathRandomIndex(candidates.size()));
     }
 }

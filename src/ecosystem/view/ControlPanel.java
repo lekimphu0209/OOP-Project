@@ -6,6 +6,7 @@ import ecosystem.view.render.legacy.AdvancedRenderer;
 import ecosystem.view.render.legacy.BasicRenderer;
 
 import javax.swing.*;
+import java.awt.event.ItemEvent;
 
 /**
  * Creates and manages the control panel with buttons.
@@ -29,8 +30,33 @@ public class ControlPanel {
         panel.add(createPauseButton());
         panel.add(createInspectButton());
         panel.add(createPlantFoodButton());
+        panel.add(createPlaceAnimalControls());
         panel.add(createPlaceObstacleButton());
         panel.add(createToggleRendererButton());
+        return panel;
+    }
+
+    private JPanel createPlaceAnimalControls() {
+        JPanel panel = new JPanel();
+        String[] labels = { "Thỏ", "Hươu", "Sói", "Hổ", "Voi", "Người", "Cá", "Vịt", "Cá sấu" };
+        JComboBox<String> speciesBox = new JComboBox<>(labels);
+        speciesBox.addItemListener(e -> {
+            if (e.getStateChange() == ItemEvent.SELECTED) {
+                view.setSelectedAnimalType(speciesBox.getSelectedIndex());
+            }
+        });
+        view.setSelectedAnimalType(0);
+
+        JButton btn = new JButton("Đặt động vật");
+        btn.addActionListener(ev -> {
+            String species = (String) speciesBox.getSelectedItem();
+            view.setActionMode("place_animal",
+                    "Chế độ: Đặt " + species + " (nhấp vào ô trống trên bản đồ)");
+        });
+
+        panel.add(new JLabel("Loài:"));
+        panel.add(speciesBox);
+        panel.add(btn);
         return panel;
     }
 

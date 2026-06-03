@@ -3,6 +3,7 @@ package ecosystem.view.render.legacy;
 import ecosystem.entities.Animal;
 import ecosystem.entities.Plant;
 import ecosystem.environment.Environment;
+import ecosystem.physics.Vector2D;
 import ecosystem.terrain.Tile;
 import ecosystem.view.render.IRenderStrategy;
 
@@ -30,7 +31,9 @@ public class AdvancedRenderer implements IRenderStrategy {
 
         // Load tileset_16x16 for terrain
         try {
-            tileset16x16 = ImageIO.read(new File("resources/images/tileset_16x16_final_1.png"));
+            File tilesetFile = new File(getResourcePath("resources/images"), "tileset_16x16_final_1.png");
+            System.out.println("Loading tileset from: " + tilesetFile.getAbsolutePath());
+            tileset16x16 = ImageIO.read(tilesetFile);
             tileCoords = new HashMap<>();
             int s = 16;
             int cols = 17; // Columns in tileset_16x16_final_1.png
@@ -47,6 +50,7 @@ public class AdvancedRenderer implements IRenderStrategy {
 
             isTilesetLoaded = true;
         } catch (IOException e) {
+            System.out.println("Failed to load tileset: " + e.getMessage());
             isTilesetLoaded = false;
         }
 
@@ -95,12 +99,13 @@ public class AdvancedRenderer implements IRenderStrategy {
     }
 
     private void loadAnimalAnimations(String animalName, String folderName) throws IOException {
-        String[] actions = {"idle", "eat", "run"};
-        String basePath = "resources/activities/" + folderName + "/";
+        String[] actions = { "idle", "eat", "run" };
+        File resourceBase = new File(getResourcePath("resources/activities"));
+        File animalFolder = new File(resourceBase, folderName);
         BufferedImage idleImage = null;
 
         // First, load idle image as fallback
-        File idleFile = new File(basePath + "idle.png");
+        File idleFile = new File(animalFolder, "idle.png");
         if (idleFile.exists()) {
             idleImage = ImageIO.read(idleFile);
             animalImages.put(animalName + "_idle", idleImage);
@@ -109,10 +114,11 @@ public class AdvancedRenderer implements IRenderStrategy {
 
         // Load other actions, use idle as fallback if missing
         for (String action : actions) {
-            if (action.equals("idle")) continue; // Already loaded
+            if (action.equals("idle"))
+                continue; // Already loaded
 
             String key = animalName + "_" + action;
-            File imageFile = new File(basePath + action + ".png");
+            File imageFile = new File(animalFolder, action + ".png");
 
             if (imageFile.exists()) {
                 animalImages.put(key, ImageIO.read(imageFile));
@@ -128,14 +134,26 @@ public class AdvancedRenderer implements IRenderStrategy {
     }
 
     private void loadPlantImage(String plantName, String fileName) throws IOException {
-        String imagePath = "resources/plant/" + fileName + ".png";
-        File imageFile = new File(imagePath);
+        File resourceBase = new File(getResourcePath("resources/plant"));
+        File imageFile = new File(resourceBase, fileName + ".png");
 
         if (imageFile.exists()) {
             plantImages.put(plantName, ImageIO.read(imageFile));
             System.out.println("Loaded plant: " + plantName + " from " + imageFile.getAbsolutePath());
         } else {
             System.out.println("Not found: " + imageFile.getAbsolutePath());
+        }
+    }
+
+    private void drawAnimalSprite(Graphics2D g2d, BufferedImage img, int x, int y, int size, int facingSign) {
+        if (facingSign < 0) {
+            java.awt.geom.AffineTransform saved = g2d.getTransform();
+            g2d.translate(x + size, y);
+            g2d.scale(-1, 1);
+            g2d.drawImage(img, 0, 0, size, size, null);
+            g2d.setTransform(saved);
+        } else {
+            g2d.drawImage(img, x, y, size, size, null);
         }
     }
 
@@ -150,6 +168,13 @@ public class AdvancedRenderer implements IRenderStrategy {
         }
     }
 
+    private String getResourcePath(String relativePath) {
+        // Get the project root directory (current working directory)
+        String projectRoot = System.getProperty("user.dir");
+        File resourceFile = new File(projectRoot, relativePath);
+        return resourceFile.getAbsolutePath();
+    }
+
     private Rectangle getTileRect(int gid, int cols, int tileSize) {
         int index = gid - 1;
         int x = (index % cols) * tileSize;
@@ -158,7 +183,8 @@ public class AdvancedRenderer implements IRenderStrategy {
     }
 
     @Override
-    public void render(Graphics2D g2d, Environment env, int cellSize, double zoomLevel, int offsetX, int offsetY, int panelWidth, int panelHeight) {
+    public void render(Graphics2D g2d, Environment env, int cellSize, double zoomLevel, int offsetX, int offsetY,
+            int panelWidth, int panelHeight) {
         if (!isTilesetLoaded || tileset16x16 == null) {
             fallbackRenderer.render(g2d, env, cellSize, zoomLevel, offsetX, offsetY, panelWidth, panelHeight);
             return;
@@ -182,17 +208,19 @@ public class AdvancedRenderer implements IRenderStrategy {
                 Rectangle r = tileCoords.get(tile.getType().getName());
                 if (r != null) {
                     g2d.drawImage(tileset16x16, drawX, drawY, drawX + currentCellSize, drawY + currentCellSize,
-                        r.x, r.y, r.x + r.width, r.y + r.height, null);
+                            r.x, r.y, r.x + r.width, r.y + r.height, null);
                 }
             }
         }
 
         // 2. VẼ THỰC VẬT bằng hình ảnh từ folder plant
         for (Plant plant : env.getPlants()) {
-            if (!plant.isAlive()) continue; // Chỉ render plant khi còn sống
+            if (!plant.isAlive())
+                continue; // Chỉ render plant khi còn sống
             int i = (int) plant.getPosition().getX();
             int j = (int) plant.getPosition().getY();
-            if (i < startX || i >= endX || j < startY || j >= endY) continue;
+            if (i < startX || i >= endX || j < startY || j >= endY)
+                continue;
 
             int drawX = i * currentCellSize + offsetX;
             int drawY = j * currentCellSize + offsetY;
@@ -200,7 +228,7 @@ public class AdvancedRenderer implements IRenderStrategy {
             if (isPlantImagesLoaded && plantImages != null) {
                 BufferedImage plantImg = plantImages.get(plant.getType());
                 if (plantImg != null) {
-                    int pad = (int)(currentCellSize * 0.1);
+                    int pad = (int) (currentCellSize * 0.1);
                     int size = currentCellSize - pad * 2;
                     int x = drawX + pad;
                     int y = drawY + pad;
@@ -212,9 +240,11 @@ public class AdvancedRenderer implements IRenderStrategy {
                     int y = drawY + currentCellSize / 2;
                     int size = (int) ((plant.getType().equals("Cỏ") ? 10 : 16) * zoomLevel);
 
-                    if (plant.getType().equals("Cỏ")) g2d.setColor(new Color(50, 205, 50));
-                    else g2d.setColor(new Color(255, 69, 0));
-                    g2d.fillOval(x - size/2, y - size/2, size, size);
+                    if (plant.getType().equals("Cỏ"))
+                        g2d.setColor(new Color(50, 205, 50));
+                    else
+                        g2d.setColor(new Color(255, 69, 0));
+                    g2d.fillOval(x - size / 2, y - size / 2, size, size);
                 }
             } else {
                 // Fallback to shapes
@@ -222,41 +252,47 @@ public class AdvancedRenderer implements IRenderStrategy {
                 int y = drawY + currentCellSize / 2;
                 int size = (int) ((plant.getType().equals("Cỏ") ? 10 : 16) * zoomLevel);
 
-                if (plant.getType().equals("Cỏ")) g2d.setColor(new Color(50, 205, 50));
-                else g2d.setColor(new Color(255, 69, 0));
-                g2d.fillOval(x - size/2, y - size/2, size, size);
+                if (plant.getType().equals("Cỏ"))
+                    g2d.setColor(new Color(50, 205, 50));
+                else
+                    g2d.setColor(new Color(255, 69, 0));
+                g2d.fillOval(x - size / 2, y - size / 2, size, size);
             }
         }
 
         // 3. VẼ ĐỘNG VẬT bằng sprites từ spritesheet.png
         for (Animal animal : env.getAnimals()) {
-            if (animal == null) continue;
-            int i = (int) animal.getPosition().getX();
-            int j = (int) animal.getPosition().getY();
-            if (i < startX || i >= endX || j < startY || j >= endY) continue;
+            if (animal == null)
+                continue;
+            Vector2D renderPos = animal.getRenderPosition();
+            double px = renderPos.getX();
+            double py = renderPos.getY();
+            if (px < startX - 1 || px >= endX || py < startY - 1 || py >= endY)
+                continue;
 
-            int drawX = i * currentCellSize + offsetX;
-            int drawY = j * currentCellSize + offsetY;
+            int drawX = (int) (px * currentCellSize + offsetX);
+            int drawY = (int) (py * currentCellSize + offsetY);
 
             if (isAnimalImagesLoaded && animalImages != null) {
                 String imageKey = animal.getName() + "_" + mapActionToImage(animal.getActionState());
                 BufferedImage animalImg = animalImages.get(imageKey);
                 if (animalImg != null) {
                     try {
-                        int pad = (int)(currentCellSize * 0.15);
+                        int pad = (int) (currentCellSize * 0.15);
                         int size = currentCellSize - pad * 2;
                         int x = drawX + pad;
                         int y = drawY + pad;
 
-                        g2d.drawImage(animalImg, x, y, size, size, null);
+                        drawAnimalSprite(g2d, animalImg, x, y, size, animal.getFacingSign());
 
                         // Health bar
                         if (zoomLevel > 0.8) {
                             int healthW = (int) (20 * zoomLevel);
                             g2d.setColor(Color.RED);
-                            g2d.fillRect(drawX + currentCellSize/2 - healthW/2, drawY + 5, healthW, 3);
+                            g2d.fillRect(drawX + currentCellSize / 2 - healthW / 2, drawY + 5, healthW, 3);
                             g2d.setColor(Color.GREEN);
-                            g2d.fillRect(drawX + currentCellSize/2 - healthW/2, drawY + 5, (int) (healthW * animal.getHealth() / 100.0), 3);
+                            g2d.fillRect(drawX + currentCellSize / 2 - healthW / 2, drawY + 5,
+                                    (int) (healthW * animal.getHealth() / 100.0), 3);
                         }
                     } catch (Exception e) {
                         System.out.println("Error drawing animal image: " + e.getMessage() + ", using fallback");
@@ -266,8 +302,10 @@ public class AdvancedRenderer implements IRenderStrategy {
                         int size = (int) (16 * zoomLevel);
 
                         g2d.setColor(getAnimalColor(animal));
-                        if (animal.isPredator()) g2d.fillRect(x - size/2, y - size/2, size, size);
-                        else g2d.fillOval(x - size/2, y - size/2, size, size);
+                        if (animal.isPredator())
+                            g2d.fillRect(x - size / 2, y - size / 2, size, size);
+                        else
+                            g2d.fillOval(x - size / 2, y - size / 2, size, size);
                     }
                 } else {
                     // Fallback to basic shapes
@@ -276,8 +314,10 @@ public class AdvancedRenderer implements IRenderStrategy {
                     int size = (int) (16 * zoomLevel);
 
                     g2d.setColor(getAnimalColor(animal));
-                    if (animal.isPredator()) g2d.fillRect(x - size/2, y - size/2, size, size);
-                    else g2d.fillOval(x - size/2, y - size/2, size, size);
+                    if (animal.isPredator())
+                        g2d.fillRect(x - size / 2, y - size / 2, size, size);
+                    else
+                        g2d.fillOval(x - size / 2, y - size / 2, size, size);
                 }
             } else {
                 // Fallback to shapes if animal images not loaded
@@ -286,15 +326,17 @@ public class AdvancedRenderer implements IRenderStrategy {
                 int size = (int) (16 * zoomLevel);
 
                 g2d.setColor(getAnimalColor(animal));
-                if (animal.isPredator()) g2d.fillRect(x - size/2, y - size/2, size, size);
-                else g2d.fillOval(x - size/2, y - size/2, size, size);
+                if (animal.isPredator())
+                    g2d.fillRect(x - size / 2, y - size / 2, size, size);
+                else
+                    g2d.fillOval(x - size / 2, y - size / 2, size, size);
 
                 if (zoomLevel > 0.8) {
                     int healthW = (int) (20 * zoomLevel);
                     g2d.setColor(Color.RED);
-                    g2d.fillRect(x - healthW/2, y - size/2 - 5, healthW, 3);
+                    g2d.fillRect(x - healthW / 2, y - size / 2 - 5, healthW, 3);
                     g2d.setColor(Color.GREEN);
-                    g2d.fillRect(x - healthW/2, y - size/2 - 5, (int) (healthW * animal.getHealth() / 100.0), 3);
+                    g2d.fillRect(x - healthW / 2, y - size / 2 - 5, (int) (healthW * animal.getHealth() / 100.0), 3);
                 }
             }
         }
@@ -302,16 +344,26 @@ public class AdvancedRenderer implements IRenderStrategy {
 
     private Color getAnimalColor(Animal animal) {
         switch (animal.getName()) {
-            case "Thỏ": return Color.WHITE;
-            case "Hươu": return new Color(139, 69, 19);
-            case "Sói": return Color.GRAY;
-            case "Hổ": return Color.ORANGE;
-            case "Voi": return new Color(169, 169, 169);
-            case "Người": return Color.BLUE;
-            case "Cá": return new Color(0, 255, 255);
-            case "Vịt": return Color.YELLOW;
-            case "Cá sấu": return new Color(0, 100, 0);
-            default: return Color.BLACK;
+            case "Thỏ":
+                return Color.WHITE;
+            case "Hươu":
+                return new Color(139, 69, 19);
+            case "Sói":
+                return Color.GRAY;
+            case "Hổ":
+                return Color.ORANGE;
+            case "Voi":
+                return new Color(169, 169, 169);
+            case "Người":
+                return Color.BLUE;
+            case "Cá":
+                return new Color(0, 255, 255);
+            case "Vịt":
+                return Color.YELLOW;
+            case "Cá sấu":
+                return new Color(0, 100, 0);
+            default:
+                return Color.BLACK;
         }
     }
 }

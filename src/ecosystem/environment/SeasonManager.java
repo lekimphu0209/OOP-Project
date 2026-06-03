@@ -1,5 +1,7 @@
 package ecosystem.environment;
 
+import ecosystem.SimulationConfig;
+
 /**
  * Manages season information and transitions.
  * Extracted from Environment to reduce file size.
@@ -92,7 +94,7 @@ public class SeasonManager {
 
     public void tick() {
         ticksInCurrentSeason++;
-        if (ticksInCurrentSeason >= currentSeason.getDuration()) {
+        if (ticksInCurrentSeason >= SimulationConfig.legacyTicks(currentSeason.getDuration())) {
             nextSeason();
         }
     }

@@ -7,7 +7,7 @@ public class Fish extends Animal {
         super(position, 0.3, "Cá", 100, 0.8, 0, false);
         this.canSwim = true;
         this.canWalk = false;
-        this.reproductionCooldownMax = 40; // 2 seconds (40 ticks at 500ms/tick)
+        setLegacyReproductionCooldown(40);
     }
 
     @Override

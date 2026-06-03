@@ -1,5 +1,6 @@
 package ecosystem.behavior;
 
+import ecosystem.SimulationConfig;
 import ecosystem.entities.Animal;
 import ecosystem.entities.Entity;
 import ecosystem.environment.Environment;
@@ -20,7 +21,7 @@ public class ScaredStrategy implements SurvivalStrategy {
         }
         
         // Priority: check thirst and hunger first
-        if (animal.getThirst() > 30) {
+        if (animal.getThirst() > SimulationConfig.HUNGER_SEEK_THRESHOLD) {
             if (env.hasWaterNearby(animal)) {
                 animal.drink(env);
                 animal.setActionState("Đang uống");
@@ -28,26 +29,28 @@ public class ScaredStrategy implements SurvivalStrategy {
                 animal.setActionState("Tìm nước");
             }
             Vector2D waterDir = env.findDirectionToNearestWater(animal, 6);
-            if (waterDir != null) animal.setDirection(waterDir);
+            if (waterDir != null) {
+                animal.setDirection(waterDir);
+            } else {
+                wander(animal);
+            }
             return;
         }
         
-        if (animal.getHunger() > 30) {
+        if (animal.getHunger() > SimulationConfig.HUNGER_SEEK_THRESHOLD) {
             Entity food = animal.findFood(env);
             if (food != null) {
-                double distance = animal.getPosition().distanceTo(food.getPosition());
-                if (distance < 1.0) {
-                    // At the food - eat it
+                if (animal.isWithinRange(food.getPosition(), SimulationConfig.HERBIVORE_EAT_RADIUS)) {
                     animal.eat(food);
                     animal.setActionState("Đang ăn");
                 } else {
-                    // Move towards food
                     animal.setActionState("Tìm thức ăn");
-                    Vector2D foodDir = food.getPosition().subtract(animal.getPosition()).normalize();
+                    Vector2D foodDir = food.getPosition().subtract(animal.getRenderPosition()).normalize();
                     animal.setDirection(foodDir);
                 }
             } else {
                 animal.setActionState("Tìm thức ăn");
+                wander(animal);
             }
             return;
         }
@@ -62,12 +65,8 @@ public class ScaredStrategy implements SurvivalStrategy {
             int currentY = (int) animal.getPosition().getY();
             
             if (env.getGrid().getTile(currentX, currentY).getType() == TerrainType.FOREST) {
-                // Prey is in forest - wolves can't enter, so prey is safe
                 animal.setActionState("Trốn trong rừng");
-                // Stay in forest and move slowly
-                if (Math.random() < 0.3) {
-                    new PassiveStrategy().execute(animal, env);
-                }
+                new PassiveStrategy().execute(animal, env);
                 return;
             }
             
@@ -99,7 +98,7 @@ public class ScaredStrategy implements SurvivalStrategy {
         for (Animal other : animals) {
             if (other == null) continue;
             if (other != prey && other.isAlive() && prey.isEnemy(other)) {
-                double distance = prey.getPosition().distanceTo(other.getPosition());
+                double distance = prey.getRenderPosition().distanceTo(other.getRenderPosition());
                 if (distance < minDistance && distance <= visionRange) {
                     minDistance = distance;
                     nearest = other;
@@ -110,7 +109,7 @@ public class ScaredStrategy implements SurvivalStrategy {
     }
 
     private Vector2D findNearestForest(Animal animal, Environment env) {
-        Vector2D nearestForest = null;
+        java.util.List<Vector2D> candidates = new java.util.ArrayList<>();
         double minDistance = Double.MAX_VALUE;
         int searchRange = 5;
 
@@ -118,23 +117,34 @@ public class ScaredStrategy implements SurvivalStrategy {
             for (int dy = -searchRange; dy <= searchRange; dy++) {
                 int x = (int) animal.getPosition().getX() + dx;
                 int y = (int) animal.getPosition().getY() + dy;
-                
-                if (env.getGrid().getTile(x, y) != null && 
-                    env.getGrid().getTile(x, y).getType() == TerrainType.FOREST) {
+
+                if (env.getGrid().getTile(x, y) != null
+                        && env.getGrid().getTile(x, y).getType() == TerrainType.FOREST) {
                     Vector2D forestPos = new Vector2D(x, y);
                     double distance = animal.getPosition().distanceTo(forestPos);
-                    if (distance < minDistance) {
+                    if (distance < minDistance - 0.25) {
                         minDistance = distance;
-                        nearestForest = forestPos;
+                        candidates.clear();
+                        candidates.add(forestPos);
+                    } else if (distance <= minDistance + 1.5) {
+                        if (candidates.isEmpty()) {
+                            minDistance = distance;
+                        }
+                        candidates.add(forestPos);
                     }
                 }
             }
         }
 
-        if (nearestForest != null) {
-            return nearestForest.subtract(animal.getPosition()).normalize();
+        if (candidates.isEmpty()) {
+            return null;
         }
-        return null;
+        Vector2D target = candidates.get(animal.pickPathRandomIndex(candidates.size()));
+        return target.subtract(animal.getPosition()).normalize();
+    }
+
+    private void wander(Animal animal) {
+        animal.pickRandomWanderDirection();
     }
 
     @Override

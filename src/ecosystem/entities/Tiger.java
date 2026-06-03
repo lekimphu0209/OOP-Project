@@ -8,7 +8,7 @@ public class Tiger extends Animal {
         super(position, 0.7, "Hổ", 100, 1.3, 4, true);
         this.hungerRate = 1;
         this.setStrategy(new HunterStrategy());
-        this.reproductionCooldownMax = 120; // 6 seconds (120 ticks at 500ms/tick) - reduced for survival
+        setLegacyReproductionCooldown(120);
     }
 
     @Override

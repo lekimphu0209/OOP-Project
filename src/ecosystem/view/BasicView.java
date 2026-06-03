@@ -37,10 +37,15 @@ public class BasicView extends JFrame implements IObserver {
     protected JLabel infoLabel;
     protected CameraController camera;
     protected InputHandler inputHandler;
-    protected String actionMode = "inspect"; // inspect, plant_food, or place_obstacle
+    protected String actionMode = "inspect"; // inspect, plant_food, place_obstacle, place_animal
+    protected int selectedAnimalType = 0;
     protected IRenderStrategy currentRenderer;
     protected boolean useGraphicMode = false; // false: Basic, true: Đồ họa
     protected ControlPanel controlPanel;
+    private Timer animationTimer;
+    /** Tránh một lần nhấp tạo nhiều con (double-click / multi-click). */
+    private long lastAnimalPlacementMs = 0;
+    private static final long PLACE_ANIMAL_DEBOUNCE_MS = 450;
 
     public BasicView(Environment environment) {
         this.environment = environment;
@@ -51,6 +56,17 @@ public class BasicView extends JFrame implements IObserver {
         createMapPanel();
         setupMouseListeners();
         layoutComponents();
+        startAnimationTimer();
+    }
+
+    /** Repaint ~60 FPS so animal movement interpolation looks smooth. */
+    private void startAnimationTimer() {
+        animationTimer = new Timer(16, e -> {
+            if (mapPanel != null && mapPanel.isShowing()) {
+                mapPanel.repaint();
+            }
+        });
+        animationTimer.start();
     }
 
     private void setupWindow() {
@@ -68,8 +84,8 @@ public class BasicView extends JFrame implements IObserver {
                 Graphics2D g2d = (Graphics2D) g;
                 g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 if (currentRenderer != null) {
-                    currentRenderer.render(g2d, environment, camera.getCellSize(), camera.getZoomLevel(), 
-                                        camera.getOffsetX(), camera.getOffsetY(), getWidth(), getHeight());
+                    currentRenderer.render(g2d, environment, camera.getCellSize(), camera.getZoomLevel(),
+                            camera.getOffsetX(), camera.getOffsetY(), getWidth(), getHeight());
                 }
             }
         };
@@ -77,19 +93,45 @@ public class BasicView extends JFrame implements IObserver {
 
     private void setupMouseListeners() {
         this.inputHandler = new InputHandler(mapPanel, camera);
-        mapPanel.addMouseListener(inputHandler.createMousePressListener());
         mapPanel.addMouseMotionListener(inputHandler.createMouseMotionListener());
         mapPanel.addMouseWheelListener(inputHandler.createMouseWheelListener());
-        
-        // Keep map click handler in BasicView
+
         mapPanel.addMouseListener(new MouseAdapter() {
             @Override
-            public void mouseClicked(MouseEvent e) {
-                if (SwingUtilities.isLeftMouseButton(e)) {
-                    handleMapClick(e);
+            public void mousePressed(MouseEvent e) {
+                inputHandler.recordPress(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (!SwingUtilities.isLeftMouseButton(e)) {
+                    return;
+                }
+                // Đặt vật: chỉ khi thả chuột (một chu kỳ nhấn = một con)
+                if (actionMode.equals("place_animal")) {
+                    handlePlaceAnimalClick(e);
+                    e.consume();
+                    return;
                 }
             }
+
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (!SwingUtilities.isLeftMouseButton(e) || actionMode.equals("place_animal")) {
+                    return;
+                }
+                handleMapClick(e);
+            }
         });
+    }
+
+    private void handlePlaceAnimalClick(MouseEvent e) {
+        long now = System.currentTimeMillis();
+        if (now - lastAnimalPlacementMs < PLACE_ANIMAL_DEBOUNCE_MS) {
+            return;
+        }
+        lastAnimalPlacementMs = now;
+        handleMapClick(e);
     }
 
     private void layoutComponents() {
@@ -98,11 +140,17 @@ public class BasicView extends JFrame implements IObserver {
         add(controlPanel.createControlPanel(), BorderLayout.NORTH);
         add(mapPanel, BorderLayout.CENTER);
         add(infoLabel, BorderLayout.SOUTH);
+        System.out.println("[DEBUG] layoutComponents done, useGraphicMode = " + useGraphicMode + ", currentRenderer = "
+                + (currentRenderer != null ? currentRenderer.getClass().getSimpleName() : "null"));
     }
 
     public void setActionMode(String mode, String message) {
         actionMode = mode;
         infoLabel.setText(message);
+    }
+
+    public void setSelectedAnimalType(int type) {
+        this.selectedAnimalType = type;
     }
 
     public void toggleRenderer(JButton btn) {
@@ -123,7 +171,7 @@ public class BasicView extends JFrame implements IObserver {
         int currentCellSize = (int) (camera.getCellSize() * camera.getZoomLevel());
         int x = (e.getX() - camera.getOffsetX()) / currentCellSize;
         int y = (e.getY() - camera.getOffsetY()) / currentCellSize;
-        
+
         if (x < 0 || y < 0 || x >= environment.getGrid().getWidth() || y >= environment.getGrid().getHeight()) {
             return;
         }
@@ -131,7 +179,8 @@ public class BasicView extends JFrame implements IObserver {
         // Check for animal at clicked position first
         Animal clickedAnimal = null;
         for (Animal animal : environment.getAnimals()) {
-            if (animal == null) continue;
+            if (animal == null)
+                continue;
             int ax = (int) animal.getPosition().getX();
             int ay = (int) animal.getPosition().getY();
             if (ax == x && ay == y) {
@@ -140,12 +189,25 @@ public class BasicView extends JFrame implements IObserver {
             }
         }
 
-        if (clickedAnimal != null) {
+        if (actionMode.equals("place_animal")) {
+            if (controller == null) {
+                return;
+            }
+            String name = ecosystem.controller.SimulationController.getAnimalTypeName(selectedAnimalType);
+            if (controller.spawnAnimalAt(selectedAnimalType, x, y)) {
+                infoLabel.setText("Đã thêm " + name + " tại (" + x + ", " + y + ")");
+            } else {
+                infoLabel.setText("Không thể đặt " + name + " tại (" + x + ", " + y + ") — kiểm tra địa hình/ô trống");
+            }
+            updateView();
+            return;
+        }
+
+        if (clickedAnimal != null && actionMode.equals("inspect")) {
             showAnimalInfo(clickedAnimal);
             return;
         }
 
-        // If no animal clicked, proceed with action mode
         if (actionMode.equals("plant_food")) {
             Tile tile = environment.getGrid().getTile(x, y);
             if (tile != null && (tile.getType() == TerrainType.GRASS || tile.getType() == TerrainType.FOREST)) {
@@ -167,19 +229,18 @@ public class BasicView extends JFrame implements IObserver {
     protected void showAnimalInfo(Animal animal) {
         String strategyName = animal.getStrategy() != null ? animal.getStrategy().getClass().getSimpleName() : "N/A";
         String stateName = animal.getState() != null ? animal.getState().getClass().getSimpleName() : "N/A";
-        
+
         String info = String.format(
-            "%s | Máu: %d/%d | Đói: %d | Khát: %d | Tốc độ: %.1f | Ưu tiên: %d | Chiến lược: %s | Trạng thái: %s",
-            animal.getName(),
-            animal.getHealth(),
-            animal.getHealth() > 0 ? 100 : 0,
-            animal.getHunger(),
-            animal.getThirst(),
-            animal.getBaseSpeed(),
-            animal.getPriority(),
-            strategyName,
-            stateName
-        );
+                "%s | Máu: %d/%d | Đói: %d | Khát: %d | Tốc độ: %.1f | Ưu tiên: %d | Chiến lược: %s | Trạng thái: %s",
+                animal.getName(),
+                animal.getHealth(),
+                animal.getHealth() > 0 ? 100 : 0,
+                animal.getHunger(),
+                animal.getThirst(),
+                animal.getBaseSpeed(),
+                animal.getPriority(),
+                strategyName,
+                stateName);
         infoLabel.setText(info);
     }
 
@@ -193,7 +254,8 @@ public class BasicView extends JFrame implements IObserver {
     public void update() {
         mapPanel.repaint();
         String pauseStatus = controller != null && controller.isPaused() ? " [TẠM DỪNG]" : "";
-        infoLabel.setText("Mùa: " + environment.getSeason().getName() + " (" + environment.getSeason().getDescription() + ")" +
+        infoLabel.setText(
+                "Mùa: " + environment.getSeason().getName() + " (" + environment.getSeason().getDescription() + ")" +
                         " | Động vật: " + environment.getAnimals().size() +
                         " | Thực vật: " + environment.getPlants().size() + pauseStatus);
     }

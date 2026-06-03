@@ -68,4 +68,9 @@ public class Duck extends Animal {
         // Duck ăn Grass và Fruit Tree
         return plant.getType().equals("Cỏ") || plant.getType().equals("Cây ăn quả");
     }
+
+    @Override
+    protected Animal createChild(Vector2D position) {
+        return new Duck(position);
+    }
 }
