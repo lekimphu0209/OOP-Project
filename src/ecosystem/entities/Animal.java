@@ -21,7 +21,6 @@ import ecosystem.behavior.*;
 import ecosystem.environment.SeasonManager;
 import ecosystem.environment.Environment;
 import ecosystem.physics.Vector2D;
-import ecosystem.terrain.TerrainType;
 import ecosystem.view.render.IRenderStrategy;
 import ecosystem.physics.ICollidable;
 import ecosystem.physics.IMovable;
@@ -293,44 +292,52 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
             velocity = new Vector2D(0, 0);
             return;
         }
+        env.getPhysicsSystem().getMovementEngine().step(this, env);
+    }
 
-        Vector2D nextCell = calculateTargetPosition();
-        if (isSameGridCell(nextCell, position)) {
-            changeDirectionRandomly();
-            nextCell = calculateTargetPosition();
-        }
-        if (!canEnterTile(env, nextCell)) {
-            for (int i = 0; i < 8; i++) {
-                changeDirectionRandomly();
-                nextCell = calculateTargetPosition();
-                if (canEnterTile(env, nextCell)) {
-                    break;
-                }
-                if (i == 7) {
-                    velocity = new Vector2D(0, 0);
-                    return;
-                }
-            }
-        }
+    /** Delegates tile collision to {@link ecosystem.physics.CollisionDetector}. */
+    public boolean canEnterTile(Environment env, Vector2D target) {
+        return env.getPhysicsSystem().getCollisionDetector().canEnterTile(this, env, target);
+    }
 
-        double step = cellsPerTick(env);
-        double dx = nextCell.getX() - displayX;
-        double dy = nextCell.getY() - displayY;
-        double dist = Math.hypot(dx, dy);
-        if (dist < 1e-6) {
-            velocity = new Vector2D(0, 0);
-            return;
-        }
+    public boolean canSwimOnTerrain() {
+        return canSwim;
+    }
 
-        double moveStep = Math.min(step, dist);
-        displayX += (dx / dist) * moveStep;
-        displayY += (dy / dist) * moveStep;
-        velocity = new Vector2D(dx / dist, dy / dist).multiply(calculateSpeed(env));
+    public boolean canWalkOnTerrain() {
+        return canWalk;
+    }
 
-        if (moveStep >= dist - 1e-6) {
-            enterGridCell(env, nextCell);
-        }
+    public Random getPathRandom() {
+        return pathRandom;
+    }
 
+    public double getDisplayX() {
+        return displayX;
+    }
+
+    public double getDisplayY() {
+        return displayY;
+    }
+
+    public void addDisplayOffset(double dx, double dy) {
+        displayX += dx;
+        displayY += dy;
+    }
+
+    public Vector2D getMovementDirection() {
+        return direction;
+    }
+
+    public double getSpeedBoost() {
+        return speedBoost;
+    }
+
+    public void changeDirectionForPhysics() {
+        changeDirectionRandomly();
+    }
+
+    public void trackStuckAndRecoverPhysics() {
         trackStuckAndRecover();
     }
 
@@ -354,143 +361,6 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
     private void ensureMovementDirection() {
         if (direction.magnitude() < 0.01) {
             changeDirectionRandomly();
-        }
-    }
-
-    private static boolean isSameGridCell(Vector2D a, Vector2D b) {
-        return a != null && b != null
-                && (int) a.getX() == (int) b.getX()
-                && (int) a.getY() == (int) b.getY();
-    }
-
-    private double cellsPerTick(Environment env) {
-        return calculateSpeed(env) * SimulationConfig.legacyRate(1.0) * SimulationConfig.MOVEMENT_SPEED_MULT;
-    }
-
-    private void enterGridCell(Environment env, Vector2D cell) {
-        displaceYieldingAnimals(env, cell);
-        snapToCell(cell);
-    }
-
-    private double calculateSpeed(Environment env) {
-        return baseSpeed * speedBoost * env.getSpeedModifier((int) position.getX(), (int) position.getY());
-    }
-
-    private Vector2D calculateTargetPosition() {
-        int currentX = (int) position.getX();
-        int currentY = (int) position.getY();
-
-        int targetX = currentX;
-        int targetY = currentY;
-
-        double dx = direction.getX();
-        double dy = direction.getY();
-        if (Math.abs(dx) >= Math.abs(dy)) {
-            if (dx > 0.05) {
-                targetX++;
-            } else if (dx < -0.05) {
-                targetX--;
-            }
-        } else {
-            if (dy > 0.05) {
-                targetY++;
-            } else if (dy < -0.05) {
-                targetY--;
-            }
-        }
-
-        return new Vector2D(targetX, targetY);
-    }
-
-    private boolean canMoveTo(Environment env, Vector2D target) {
-        return canEnterTile(env, target);
-    }
-
-    private boolean canEnterTile(Environment env, Vector2D target) {
-        int targetX = (int) target.getX();
-        int targetY = (int) target.getY();
-
-        if (!isTerrainPassable(env, targetX, targetY)) {
-            return false;
-        }
-
-        int animalsInTargetTile = 0;
-        for (Animal other : env.getAnimals()) {
-            if (other == null || other == this || !other.isAlive()) {
-                continue;
-            }
-
-            int otherX = (int) other.getPosition().getX();
-            int otherY = (int) other.getPosition().getY();
-            if (otherX != targetX || otherY != targetY) {
-                continue;
-            }
-
-            animalsInTargetTile++;
-            if (isPredator() && canEat(other) && animalsInTargetTile <= 1) {
-                continue;
-            }
-            if (other.mustYieldTo(this)) {
-                continue;
-            }
-            return false;
-        }
-
-        return true;
-    }
-
-    private boolean isTerrainPassable(Environment env, int targetX, int targetY) {
-        var tile = env.getGrid().getTile(targetX, targetY);
-        boolean isWater = tile != null && tile.getType() == TerrainType.WATER;
-        boolean isForest = tile != null && tile.getType() == TerrainType.FOREST;
-
-        if (isForest && (isPredator() || this instanceof Human)) {
-            return false;
-        }
-        if (isWater) {
-            return canSwim;
-        }
-        return canWalk && env.isWalkable(targetX, targetY);
-    }
-
-    private void displaceYieldingAnimals(Environment env, Vector2D target) {
-        int targetX = (int) target.getX();
-        int targetY = (int) target.getY();
-
-        for (Animal other : env.getAnimals()) {
-            if (other == null || other == this || !other.isAlive()) {
-                continue;
-            }
-            int otherX = (int) other.getPosition().getX();
-            int otherY = (int) other.getPosition().getY();
-            if (otherX != targetX || otherY != targetY) {
-                continue;
-            }
-            if (isPredator() && canEat(other)) {
-                continue;
-            }
-            if (other.mustYieldTo(this)) {
-                displaceToAdjacentTile(other, env);
-            }
-        }
-    }
-
-    private void displaceToAdjacentTile(Animal animal, Environment env) {
-        int ox = (int) animal.getPosition().getX();
-        int oy = (int) animal.getPosition().getY();
-        int[][] offsets = {
-            {1, 0}, {-1, 0}, {0, 1}, {0, -1},
-            {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
-        };
-        int start = pathRandom.nextInt(offsets.length);
-        for (int i = 0; i < offsets.length; i++) {
-            int[] d = offsets[(start + i) % offsets.length];
-            Vector2D candidate = new Vector2D(ox + d[0], oy + d[1]);
-            if (animal.canEnterTile(env, candidate)) {
-                animal.snapToCell(candidate);
-                animal.setActionState("Nhường đường");
-                return;
-            }
         }
     }
 

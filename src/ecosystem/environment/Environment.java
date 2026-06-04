@@ -15,6 +15,7 @@ package ecosystem.environment;
 import ecosystem.entities.Animal;
 import ecosystem.entities.Entity;
 import ecosystem.entities.Plant;
+import ecosystem.physics.PhysicsSystem;
 import ecosystem.physics.Vector2D;
 import ecosystem.terrain.Grid;
 import ecosystem.view.IObserver;
@@ -30,6 +31,7 @@ public class Environment implements ISubject {
     private GridHelper gridHelper;
     private FoodFinder foodFinder;
     private List<IObserver> observers;
+    private final PhysicsSystem physicsSystem = new PhysicsSystem();
 
     public Environment(int width, int height) {
         this.grid = new Grid(width, height);
@@ -133,6 +135,10 @@ public class Environment implements ISubject {
         return gridHelper.findDirectionToNearestWater(animal, searchRange);
     }
 
+    public PhysicsSystem getPhysicsSystem() {
+        return physicsSystem;
+    }
+
     public void update() {
         updateEntities();
         handleSeasonEffects();
@@ -155,9 +161,8 @@ public class Environment implements ISubject {
     }
 
     private void updateAnimals() {
-        List<Animal> sorted = new ArrayList<>(animals);
-        sorted.removeIf(a -> a == null || !a.isAlive());
-        sorted.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
+        physicsSystem.getCollisionDetector().rebuildOccupancyIndex(this);
+        List<Animal> sorted = physicsSystem.getYieldMediator().sortForInteraction(animals);
         for (Animal animal : sorted) {
             animal.act(this);
         }
