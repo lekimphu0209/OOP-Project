@@ -1,13 +1,12 @@
 package ecosystem.behavior;
 
 import ecosystem.SimulationConfig;
+import ecosystem.audio.SoundManager;
 import ecosystem.entities.Animal;
 import ecosystem.entities.Entity;
 import ecosystem.environment.Environment;
 import ecosystem.physics.Vector2D;
 import ecosystem.terrain.TerrainType;
-
-import java.util.List;
 
 public class HunterStrategy implements SurvivalStrategy {
     private double visionRange = 4.0;
@@ -66,6 +65,12 @@ public class HunterStrategy implements SurvivalStrategy {
         }
 
         if (prey != null) {
+            // Gầm khi phát hiện con mồi
+            String soundAction = "roar";
+            if (animal.getClass().getSimpleName().equalsIgnoreCase("Wolf")) {
+                soundAction = "howl";
+            }
+            SoundManager.getInstance().playAnimalSound(animal.getClass().getSimpleName().toLowerCase(), soundAction);
             int preyCount = 0;
             for (Animal a : env.getAnimals()) {
                 if (a != null && a.isAlive() && a.getClass().equals(prey.getClass())) {

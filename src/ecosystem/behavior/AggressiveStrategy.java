@@ -226,7 +226,7 @@ public class AggressiveStrategy implements SurvivalStrategy {
 
             if (!other.isAlive()) continue;
 
-            if (other.isPredator()) continue;
+            if (!hunter.canEat(other)) continue;
 
             double distance =
                     hunter.getPosition()

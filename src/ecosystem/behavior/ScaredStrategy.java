@@ -1,6 +1,7 @@
 package ecosystem.behavior;
 
 import ecosystem.SimulationConfig;
+import ecosystem.audio.SoundManager;
 import ecosystem.entities.Animal;
 import ecosystem.entities.Entity;
 import ecosystem.environment.Environment;
@@ -58,6 +59,8 @@ public class ScaredStrategy implements SurvivalStrategy {
         Animal threat = findNearestThreat(animal, env.getAnimals());
         
         if (threat != null) {
+            // Kêu khi gặp kẻ thù
+            SoundManager.getInstance().playAnimalSound(animal.getClass().getSimpleName().toLowerCase(), "squeak");
             animal.setActionState("Trốn chạy");
             
             // Check if prey can hide in forest

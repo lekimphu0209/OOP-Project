@@ -17,11 +17,11 @@ package ecosystem.entities;
  */
 
 import ecosystem.SimulationConfig;
+import ecosystem.audio.SoundManager;
 import ecosystem.behavior.*;
 import ecosystem.environment.SeasonManager;
 import ecosystem.environment.Environment;
 import ecosystem.physics.Vector2D;
-import ecosystem.view.render.IRenderStrategy;
 import ecosystem.physics.ICollidable;
 import ecosystem.physics.IMovable;
 import ecosystem.physics.IYieldable;
@@ -177,6 +177,22 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
         handleBasicNeeds(env);
         decreaseReproductionCooldown();
 
+        // Chuyển sang AggressiveStrategy khi đói quá cao (hunger > 70)
+        if (hunger > 70 && !(strategy instanceof AggressiveStrategy)) {
+            strategy = new AggressiveStrategy();
+            setActionState("Cuồng nộ vì đói!");
+            System.out.println("[Aggressive] " + name + " switched to AggressiveStrategy (hunger=" + hunger + ")");
+        }
+        // Quay lại strategy cũ khi no hơn (hunger < 40)
+        else if (hunger < 40 && strategy instanceof AggressiveStrategy) {
+            if (isPredator()) {
+                strategy = new HunterStrategy();
+            } else {
+                strategy = new ScaredStrategy();
+            }
+            System.out.println("[Aggressive] " + name + " reverted to normal strategy (hunger=" + hunger + ")");
+        }
+
         state.handle(this, env);
         strategy.execute(this, env);
         ensureMovementDirection();
@@ -292,7 +308,16 @@ public abstract class Animal extends Entity implements ICollidable, IMovable, IY
             velocity = new Vector2D(0, 0);
             return;
         }
+        
         env.getPhysicsSystem().getMovementEngine().step(this, env);
+        
+        // Phát tiếng bước chân theo terrain
+        int x = (int) getPosition().getX();
+        int y = (int) getPosition().getY();
+        if (env.getGrid().getTile(x, y) != null) {
+            String terrainType = env.getGrid().getTile(x, y).getType().name().toLowerCase();
+            SoundManager.getInstance().playTerrainSound(terrainType);
+        }
     }
 
     /** Delegates tile collision to {@link ecosystem.physics.CollisionDetector}. */

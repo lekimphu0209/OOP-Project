@@ -23,7 +23,10 @@ public class Human extends Animal {
 
     @Override
     public boolean canEat(Animal other) {
-        // Human ăn: Duck, Tiger, Wolf, Crocodile, Deer, Rabbit
+        if (other == null || other instanceof Elephant) {
+            return false;
+        }
+        // Human ăn: Duck, Tiger, Wolf, Crocodile, Deer, Rabbit (không ăn Voi)
         return other instanceof Duck || other instanceof Tiger || other instanceof Wolf ||
                other instanceof Crocodile || other instanceof Deer ||
                other instanceof Rabbit;

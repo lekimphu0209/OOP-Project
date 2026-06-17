@@ -149,6 +149,7 @@ public class Environment implements ISubject {
         updatePlants();
         updateAnimals();
         removeDeadEntities();
+        handlePlantRespawn();
         if (!ecosystem.SimulationConfig.MANUAL_SPAWNING) {
             spawnRandomPlants();
         }

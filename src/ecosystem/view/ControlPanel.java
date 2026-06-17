@@ -1,9 +1,6 @@
 package ecosystem.view;
 
 import ecosystem.controller.SimulationController;
-import ecosystem.view.render.IRenderStrategy;
-import ecosystem.view.render.legacy.AdvancedRenderer;
-import ecosystem.view.render.legacy.BasicRenderer;
 
 import javax.swing.*;
 import java.awt.event.ItemEvent;

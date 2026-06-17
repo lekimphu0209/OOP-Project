@@ -1,7 +1,5 @@
 package ecosystem.view;
 
-import java.awt.Point;
-
 /**
  * Manages camera state for the view (pan, zoom, offset).
  * Extracted from BasicView to reduce file size.
